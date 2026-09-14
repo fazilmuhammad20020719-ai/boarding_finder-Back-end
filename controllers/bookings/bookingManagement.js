@@ -25,10 +25,12 @@ const getOwnerBookings = async (req, res) => {
     const owner_id = req.user.id;
 
     const result = await query(
-      `SELECT b.*, l.title, u.name as seeker_name, u.email as seeker_email
+      `SELECT b.*, l.title, u.name as seeker_name, u.email as seeker_email,
+              lease.status as lease_status
        FROM bookings b
        JOIN listings l ON b.listing_id = l.listing_id
        JOIN users u ON b.seeker_id = u.id
+       LEFT JOIN leases lease ON b.booking_id = lease.booking_id
        WHERE b.owner_id = $1
        ORDER BY b.created_at DESC`,
       [owner_id]

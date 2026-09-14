@@ -7,20 +7,30 @@ const getConversations = async (req, res) => {
 
     // Fetch conversations for the logged-in user (whether owner or seeker)
     let sql = `
-      SELECT c.*, l.title as property_title, l.image_urls,
+      SELECT c.*, COALESCE(l.title, 'Roommate Connection') as property_title, l.image_urls,
              u_other.name as other_name, u_other.id as other_id,
              (SELECT message_text FROM messages m WHERE m.conversation_id = c.conversation_id ORDER BY created_at DESC LIMIT 1) as last_message,
              (SELECT created_at FROM messages m WHERE m.conversation_id = c.conversation_id ORDER BY created_at DESC LIMIT 1) as last_message_time,
              (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.conversation_id AND m.sender_id != $1 AND m.is_read = FALSE) as unread_count
       FROM conversations c
-      JOIN listings l ON c.listing_id = l.listing_id
+      LEFT JOIN listings l ON c.listing_id = l.listing_id
       JOIN users u_other ON (
         CASE 
           WHEN c.seeker_id = $1 THEN c.owner_id = u_other.id
           ELSE c.seeker_id = u_other.id
         END
       )
-      WHERE c.seeker_id = $1 OR c.owner_id = $1
+      WHERE (c.seeker_id = $1 OR c.owner_id = $1)
+      AND (
+        c.listing_id IS NOT NULL 
+        OR EXISTS (
+          SELECT 1 FROM roommate_connections rc 
+          WHERE rc.status = 'accepted' AND (
+            (rc.requester_id = c.seeker_id AND rc.receiver_id = c.owner_id) OR 
+            (rc.requester_id = c.owner_id AND rc.receiver_id = c.seeker_id)
+          )
+        )
+      )
       ORDER BY last_message_time DESC NULLS LAST, c.updated_at DESC
     `;
     
@@ -63,33 +73,68 @@ const sendMessage = async (req, res) => {
     let targetConvId = conversation_id;
 
     if (!targetConvId) {
-      if (!listing_id || !receiver_id) return res.status(400).json({ error: "Missing required fields to start conversation" });
+      if (!receiver_id) return res.status(400).json({ error: "Missing receiver_id to start conversation" });
       
       // Determine seeker and owner
       const isOwner = req.user.role === 'owner';
       const ownerId = isOwner ? user_id : receiver_id;
       const seekerId = isOwner ? receiver_id : user_id;
 
-      // Check if conversation exists
-      const checkConv = await query(
-        "SELECT conversation_id FROM conversations WHERE listing_id = $1 AND seeker_id = $2 AND owner_id = $3",
-        [listing_id, seekerId, ownerId]
-      );
+      // Check if conversation exists (with or without listing_id)
+      let checkConv;
+      if (listing_id) {
+        checkConv = await query(
+          "SELECT conversation_id FROM conversations WHERE listing_id = $1 AND seeker_id = $2 AND owner_id = $3",
+          [listing_id, seekerId, ownerId]
+        );
+      } else {
+        // Roommate-to-roommate chat (no listing)
+        // Since both are students, we just need to find a conversation between them where listing_id IS NULL
+        checkConv = await query(
+          "SELECT conversation_id FROM conversations WHERE listing_id IS NULL AND ((seeker_id = $1 AND owner_id = $2) OR (seeker_id = $2 AND owner_id = $1))",
+          [user_id, receiver_id]
+        );
+      }
 
       if (checkConv.rows.length > 0) {
         targetConvId = checkConv.rows[0].conversation_id;
       } else {
         // Create new conversation
-        const newConv = await query(
-          "INSERT INTO conversations (listing_id, seeker_id, owner_id) VALUES ($1, $2, $3) RETURNING conversation_id",
-          [listing_id, seekerId, ownerId]
-        );
-        targetConvId = newConv.rows[0].conversation_id;
+        if (listing_id) {
+           const newConv = await query(
+             "INSERT INTO conversations (listing_id, seeker_id, owner_id) VALUES ($1, $2, $3) RETURNING conversation_id",
+             [listing_id, seekerId, ownerId]
+           );
+           targetConvId = newConv.rows[0].conversation_id;
+        } else {
+           // For roommates, just assign one as seeker and one as owner
+           const newConv = await query(
+             "INSERT INTO conversations (listing_id, seeker_id, owner_id) VALUES (NULL, $1, $2) RETURNING conversation_id",
+             [user_id, receiver_id]
+           );
+           targetConvId = newConv.rows[0].conversation_id;
+        }
       }
     } else {
       // Verify user is in conversation
       const convCheck = await query("SELECT * FROM conversations WHERE conversation_id = $1 AND (seeker_id = $2 OR owner_id = $2)", [targetConvId, user_id]);
       if (convCheck.rows.length === 0) return res.status(403).json({ error: "Unauthorized" });
+      
+      const conv = convCheck.rows[0];
+      if (!conv.listing_id) {
+        // Enforce that roommates must still be connected
+        const checkConn = await query(`
+           SELECT 1 FROM roommate_connections 
+           WHERE status = 'accepted' AND (
+             (requester_id = $1 AND receiver_id = $2) OR 
+             (requester_id = $2 AND receiver_id = $1)
+           )
+        `, [conv.seeker_id, conv.owner_id]);
+        
+        if (checkConn.rows.length === 0) {
+           return res.status(403).json({ error: "Roommate connection no longer exists" });
+        }
+      }
     }
 
     // Insert message
