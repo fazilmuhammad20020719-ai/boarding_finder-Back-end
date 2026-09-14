@@ -169,5 +169,19 @@ CREATE TABLE IF NOT EXISTS reviews (
 ALTER TABLE reviews OWNER TO admin_user;
 CREATE INDEX IF NOT EXISTS idx_reviews_listing ON reviews(listing_id);
 
+-- 20. Saved Listings table
+CREATE TABLE IF NOT EXISTS saved_listings (
+  saved_id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  listing_id INTEGER REFERENCES listings(listing_id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, listing_id)
+);
+
+-- 21. Set ownership and indexes for saved listings
+ALTER TABLE saved_listings OWNER TO admin_user;
+CREATE INDEX IF NOT EXISTS idx_saved_listings_user ON saved_listings(user_id);
+CREATE INDEX IF NOT EXISTS idx_saved_listings_listing ON saved_listings(listing_id);
+
 -- Done!
 SELECT 'o. Database setup complete!' AS status;

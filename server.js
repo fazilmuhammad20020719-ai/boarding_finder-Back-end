@@ -10,6 +10,7 @@ const bookingsRoutes = require("./routes/bookings");
 const messagesRoutes = require("./routes/messages");
 const adminRoutes = require("./routes/admin");
 const ownerManagementRoutes = require("./routes/ownerManagement");
+const savedListingsRoutes = require("./routes/savedListings");
 const app = express();
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/images/uploads", express.static(path.join(__dirname, "uploads")));
@@ -51,6 +52,7 @@ app.use("/api/bookings", bookingsRoutes);
 app.use("/api/messages", messagesRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/owner", ownerManagementRoutes);
+app.use("/api/saved-listings", savedListingsRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

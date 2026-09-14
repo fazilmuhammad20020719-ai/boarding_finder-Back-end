@@ -76,6 +76,20 @@ async function migrate() {
       CREATE INDEX IF NOT EXISTS idx_reviews_listing ON reviews(listing_id);
     `);
 
+    // 5. Saved Listings table
+    console.log("Creating saved_listings table...");
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS saved_listings (
+        saved_id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        listing_id INTEGER REFERENCES listings(listing_id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(user_id, listing_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_saved_listings_user ON saved_listings(user_id);
+      CREATE INDEX IF NOT EXISTS idx_saved_listings_listing ON saved_listings(listing_id);
+    `);
+
     // Try setting ownership (fails on non-superuser, ignored gracefully)
     try {
         await pool.query(`ALTER TABLE bookings OWNER TO admin_user;`);
