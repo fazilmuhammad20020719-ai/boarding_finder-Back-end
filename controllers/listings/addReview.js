@@ -1,4 +1,5 @@
 const { query } = require("../../db");
+const { validateComment } = require("../../utils/validators");
 
 const addReview = async (req, res) => {
   try {
@@ -16,6 +17,12 @@ const addReview = async (req, res) => {
 
     if (!comment || comment.trim().length === 0) {
       return res.status(400).json({ message: "Comment is required." });
+    }
+
+    // ── Input validation ──
+    const commentCheck = validateComment(comment);
+    if (!commentCheck.valid) {
+      return res.status(400).json({ message: commentCheck.message });
     }
 
     // Insert the review

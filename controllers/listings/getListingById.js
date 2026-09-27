@@ -16,6 +16,9 @@ const getListingById = async (req, res) => {
       return res.status(404).json({ message: "Listing not found" });
     }
 
+    // Increment view count
+    await query("UPDATE listings SET views = views + 1 WHERE listing_id = $1", [id]);
+
     // Fetch reviews for this listing
     const reviewsSql = `
       SELECT r.review_id as id, r.rating, r.comment as text, r.created_at, u.name as reviewer_name

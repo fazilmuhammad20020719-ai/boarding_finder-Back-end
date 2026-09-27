@@ -218,20 +218,36 @@ const sendConnectionRequest = async (req, res) => {
   }
 };
 
-// 6. Get Incoming Connection Requests
+// 6. Get Incoming and Outgoing Connection Requests
 const getConnectionRequests = async (req, res) => {
   try {
     const userId = req.user.id;
-    const sql = `
-      SELECT c.id as connection_id, r.*, u.name 
+    // Incoming requests (where I am the receiver)
+    const incomingSql = `
+      SELECT c.id as connection_id, 'incoming' as direction, r.*, u.name 
       FROM roommate_connections c
       JOIN roommate_profiles r ON c.requester_id = r.user_id
       JOIN users u ON r.user_id = u.id
       WHERE c.receiver_id = $1 AND c.status = 'pending'
       ORDER BY c.created_at DESC
     `;
-    const result = await query(sql, [userId]);
-    return res.status(200).json({ requests: result.rows });
+    const incomingResult = await query(incomingSql, [userId]);
+
+    // Outgoing requests (where I am the requester)
+    const outgoingSql = `
+      SELECT c.id as connection_id, 'outgoing' as direction, r.*, u.name 
+      FROM roommate_connections c
+      JOIN roommate_profiles r ON c.receiver_id = r.user_id
+      JOIN users u ON r.user_id = u.id
+      WHERE c.requester_id = $1 AND c.status = 'pending'
+      ORDER BY c.created_at DESC
+    `;
+    const outgoingResult = await query(outgoingSql, [userId]);
+
+    return res.status(200).json({ 
+      requests: incomingResult.rows,
+      sentRequests: outgoingResult.rows 
+    });
   } catch (error) {
     console.error("Error fetching connection requests:", error);
     return res.status(500).json({ message: "Internal server error" });

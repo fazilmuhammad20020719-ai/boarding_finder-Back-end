@@ -1,6 +1,10 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { query } = require("../../db");
+const {
+  validatePassword, validateEmail, validatePhone,
+  validateName, collectErrors,
+} = require("../../utils/validators");
 
 const registerAdmin = async (req, res) => {
   try {
@@ -10,6 +14,17 @@ const registerAdmin = async (req, res) => {
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: "Name, email, password and role are required." });
+    }
+
+    // ── Input validation ──
+    const validation = collectErrors([
+      validateName(name),
+      validateEmail(email),
+      validatePhone(phone),
+      validatePassword(password),
+    ]);
+    if (!validation.valid) {
+      return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
     }
 
     const existingUser = await query("SELECT id FROM users WHERE email = $1", [email]);

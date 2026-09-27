@@ -12,6 +12,10 @@ const { deleteListing } = require("../controllers/listings/deleteListing");
 const { getMyListings } = require("../controllers/listings/getMyListings");
 const { uploadPhotos } = require("../controllers/listings/upload");
 const { addReview } = require("../controllers/listings/addReview");
+const { getNeighborhoodDetails } = require("../controllers/listings/getNeighborhoodDetails");
+const { pauseListing } = require("../controllers/listings/pauseListing");
+const { duplicateListing } = require("../controllers/listings/duplicateListing");
+const { getListingAnalytics } = require("../controllers/listings/getListingAnalytics");
 
 const { getStats } = require("../controllers/listings/getStats");
 
@@ -34,10 +38,7 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB per file
   fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|webp|gif/;
-    const extOk = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mimeOk = allowed.test(file.mimetype);
-    if (extOk && mimeOk) {
+    if (file.mimetype.startsWith("image/")) {
       cb(null, true);
     } else {
       cb(new Error("Only image files (JPEG, PNG, WebP, GIF) are allowed."));
@@ -57,11 +58,15 @@ router.post("/upload", auth, upload.array("photos", 5), uploadPhotos);
 
 // Public route for specific ID
 router.get("/:id", getListingById);
+router.get("/:id/neighborhood", getNeighborhoodDetails);
 
 // Protected routes (Owner only)
 router.post("/", auth, createListing);
 router.put("/:id", auth, updateListing);
 router.delete("/:id", auth, deleteListing);
+router.put("/:id/pause", auth, pauseListing);
+router.post("/:id/duplicate", auth, duplicateListing);
+router.get("/:id/analytics", auth, getListingAnalytics);
 
 // Protected routes (Any logged in user can review)
 router.post("/:id/reviews", auth, addReview);

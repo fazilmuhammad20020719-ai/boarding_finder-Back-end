@@ -11,6 +11,12 @@ const { updateListingStatus } = require("../controllers/admin/updateListingStatu
 const { getPlatformAnalytics } = require("../controllers/admin/getPlatformAnalytics");
 const { getAllAdminBookings } = require("../controllers/admin/getAllAdminBookings");
 const { updateBookingStatusAdmin } = require("../controllers/admin/updateBookingStatusAdmin");
+const { getAllAdminReviews } = require("../controllers/admin/getAllAdminReviews");
+const { updateReviewStatusAdmin } = require("../controllers/admin/updateReviewStatusAdmin");
+const { deleteReviewAdmin } = require("../controllers/admin/deleteReviewAdmin");
+const { getAllAdminTickets, updateTicketStatusAdmin } = require("../controllers/admin/adminTickets");
+const { broadcastAnnouncement } = require("../controllers/admin/broadcastAnnouncement");
+const { getPlatformSettings, updatePlatformSettings } = require("../controllers/admin/settings");
 const router = express.Router();
 
 // ─── Admin-only middleware ───────────────────
@@ -78,5 +84,41 @@ router.put("/bookings/:id/status", auth, adminOnly, updateBookingStatusAdmin);
 // ─────────────────────────────────────────────
 router.get("/analytics", auth, adminOnly, getPlatformAnalytics);
 
-module.exports = router;
+// ==============================================================================
+// GET /api/admin/reviews
+// ==============================================================================
+router.get("/reviews", auth, adminOnly, getAllAdminReviews);
 
+// ==============================================================================
+// PUT /api/admin/reviews/:id/status
+// ==============================================================================
+router.put("/reviews/:id/status", auth, adminOnly, updateReviewStatusAdmin);
+
+// ==============================================================================
+// DELETE /api/admin/reviews/:id
+// ==============================================================================
+router.delete("/reviews/:id", auth, adminOnly, deleteReviewAdmin);
+
+// ==============================================================================
+// GET /api/admin/tickets
+// ==============================================================================
+router.get("/tickets", auth, adminOnly, getAllAdminTickets);
+
+// ==============================================================================
+// PUT /api/admin/tickets/:id/status
+// ==============================================================================
+router.put("/tickets/:id/status", auth, adminOnly, updateTicketStatusAdmin);
+
+// ==============================================================================
+// POST /api/admin/announcements
+// ==============================================================================
+router.post("/announcements", auth, adminOnly, broadcastAnnouncement);
+
+// ==============================================================================
+// GET /api/admin/settings
+// PUT /api/admin/settings
+// ==============================================================================
+router.get("/settings", auth, adminOnly, getPlatformSettings);
+router.put("/settings", auth, adminOnly, updatePlatformSettings);
+
+module.exports = router;

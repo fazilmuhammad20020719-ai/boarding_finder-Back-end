@@ -1,4 +1,8 @@
 const { query } = require("../../db");
+const {
+  validateTitle, validateDescription, validateStringLength, validateFinancial, collectErrors,
+} = require("../../utils/validators");
+const { sanitizeHtml } = require("../../utils/sanitize");
 
 const updateListing = async (req, res) => {
   try {
@@ -8,6 +12,26 @@ const updateListing = async (req, res) => {
 
     if (req.user.role !== "owner") {
       return res.status(403).json({ message: "Only owners can update listings." });
+    }
+
+    // ── Input validation & sanitization (only validate fields that were actually sent) ──
+    const checks = [];
+    let sanitizedDescription = description;
+    
+    if (title !== undefined)       checks.push(validateTitle(title));
+    if (description !== undefined) {
+      sanitizedDescription = sanitizeHtml(description);
+      checks.push(validateDescription(sanitizedDescription));
+    }
+    if (location !== undefined)    checks.push(validateStringLength(location, "Location", 2, 500));
+    if (price !== undefined)       checks.push(validateFinancial(price, "Price"));
+    if (security_deposit !== undefined) checks.push(validateFinancial(security_deposit, "Security Deposit"));
+    
+    if (checks.length > 0) {
+      const validation = collectErrors(checks);
+      if (!validation.valid) {
+        return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
+      }
     }
 
     // Verify ownership
@@ -40,7 +64,7 @@ const updateListing = async (req, res) => {
 
     const values = [
       title || null,
-      description || null,
+      sanitizedDescription || null,
       price || null,
       security_deposit || null,
       location || null,

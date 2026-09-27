@@ -1,4 +1,7 @@
 const { query } = require("../../db");
+const {
+  validatePhone, validateName, validateStringLength, collectErrors,
+} = require("../../utils/validators");
 
 const profile = async (req, res) => {
   try {
@@ -9,6 +12,24 @@ const profile = async (req, res) => {
       // Owner fields
       propertyName, propertyType, permitNumber, propertyAddress,
     } = req.body;
+
+    // ── Input validation (only validate fields that were actually sent) ──
+    const checks = [];
+    if (name !== undefined)            checks.push(validateName(name));
+    if (phone !== undefined)           checks.push(validatePhone(phone));
+    if (university !== undefined)      checks.push(validateStringLength(university, "University", 2, 200));
+    if (course !== undefined)          checks.push(validateStringLength(course, "Course", 2, 200));
+    if (propertyName !== undefined)    checks.push(validateStringLength(propertyName, "Property name", 2, 200));
+    if (propertyType !== undefined)    checks.push(validateStringLength(propertyType, "Property type", 2, 50));
+    if (permitNumber !== undefined)    checks.push(validateStringLength(permitNumber, "Permit number", 2, 50));
+    if (propertyAddress !== undefined) checks.push(validateStringLength(propertyAddress, "Property address", 5, 500));
+
+    if (checks.length > 0) {
+      const validation = collectErrors(checks);
+      if (!validation.valid) {
+        return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
+      }
+    }
 
     // Build the update query dynamically based on user role
     const result = await query(

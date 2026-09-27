@@ -5,12 +5,20 @@ const initDb = require("./config/initDb");
 const authRoutes = require("./routes/auth");
 const dbViewerRoutes = require("./routes/dbViewer");
 const path = require("path");
+const roommateRoutes = require("./routes/roommates");
 const listingsRoutes = require("./routes/listings");
 const bookingsRoutes = require("./routes/bookings");
 const messagesRoutes = require("./routes/messages");
 const adminRoutes = require("./routes/admin");
 const ownerManagementRoutes = require("./routes/ownerManagement");
 const savedListingsRoutes = require("./routes/savedListings");
+const forumRoutes = require("./routes/forum");
+const leasesRoutes = require("./routes/leases");
+const paymentRoutes = require("./routes/payments");
+const maintenanceRoutes = require("./routes/maintenance");
+const notificationsRoutes = require("./routes/notifications");
+const calendarRoutes = require("./routes/calendar");
+const ticketsRoutes = require("./routes/tickets");
 const app = express();
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/images/uploads", express.static(path.join(__dirname, "uploads")));
@@ -24,6 +32,8 @@ const allowedOrigins = [
   "http://localhost:5173",
 ];
 
+const csrfProtection = require("./middleware/csrf");
+
 // Merge any extra origins defined in .env (comma-separated)
 if (process.env.CORS_ORIGIN) {
   const envOrigins = process.env.CORS_ORIGIN.split(',').map(o => o.trim());
@@ -34,10 +44,13 @@ const corsOptions = {
   origin: allowedOrigins,
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
 };
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// ─── CSRF Protection ──────────────────────────
+app.use(csrfProtection);
 // ────────────────────────────────────────────
 
 // ─── Routes ──────────────────────────────────
@@ -47,12 +60,20 @@ app.get("/", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/db", dbViewerRoutes);
+app.use("/api/roommates", roommateRoutes);
 app.use("/api/listings", listingsRoutes);
 app.use("/api/bookings", bookingsRoutes);
 app.use("/api/messages", messagesRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/owner", ownerManagementRoutes);
 app.use("/api/saved-listings", savedListingsRoutes);
+app.use("/api/forum", forumRoutes);
+app.use("/api/leases", leasesRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/maintenance", maintenanceRoutes);
+app.use("/api/notifications", notificationsRoutes);
+app.use("/api/calendar", calendarRoutes);
+app.use("/api/tickets", ticketsRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

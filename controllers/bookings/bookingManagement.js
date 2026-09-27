@@ -1,4 +1,5 @@
 const { query } = require("../../db");
+const { createNotification } = require("../../utils/notificationUtils");
 
 const getMyBookings = async (req, res) => {
   try {
@@ -54,7 +55,10 @@ const updateBookingStatus = async (req, res) => {
     }
 
     // Verify ownership
-    const bookingRes = await query("SELECT owner_id FROM bookings WHERE booking_id = $1", [booking_id]);
+    const bookingRes = await query(
+      "SELECT b.owner_id, b.seeker_id, l.title FROM bookings b JOIN listings l ON b.listing_id = l.listing_id WHERE b.booking_id = $1", 
+      [booking_id]
+    );
     if (bookingRes.rows.length === 0) {
       return res.status(404).json({ error: "Booking not found" });
     }
@@ -66,6 +70,27 @@ const updateBookingStatus = async (req, res) => {
     const updated = await query(
       "UPDATE bookings SET status = $1, updated_at = NOW() WHERE booking_id = $2 RETURNING *",
       [status, booking_id]
+    );
+
+    // Trigger Notification for Student
+    const { seeker_id, title } = bookingRes.rows[0];
+    let notificationTitle = "Booking Updated";
+    let notificationMsg = `Your booking for ${title} has been updated.`;
+    
+    if (status === 'approved') {
+      notificationTitle = "Booking Approved!";
+      notificationMsg = `Your booking request for ${title} has been approved.`;
+    } else if (status === 'rejected') {
+      notificationTitle = "Booking Rejected";
+      notificationMsg = `Unfortunately, your booking request for ${title} was rejected.`;
+    }
+
+    await createNotification(
+      seeker_id,
+      status === 'approved' ? 'booking_approved' : 'system_alert',
+      notificationTitle,
+      notificationMsg,
+      '/my-bookings'
     );
 
     res.status(200).json({ message: "Booking updated", booking: updated.rows[0] });

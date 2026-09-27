@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS listings (
   amenities         TEXT,
   image_urls        TEXT[],
   approval_status   VARCHAR(20) DEFAULT 'approved' CHECK (approval_status IN ('pending', 'approved', 'rejected', 'suspended')),
+  is_paused         BOOLEAN DEFAULT FALSE,
+  views             INTEGER DEFAULT 0,
   created_at        TIMESTAMP DEFAULT NOW(),
   updated_at        TIMESTAMP DEFAULT NOW()
 );
@@ -126,6 +128,18 @@ CREATE INDEX IF NOT EXISTS idx_bookings_owner_id ON bookings(owner_id);
 
 -- 14. Set ownership for bookings
 ALTER TABLE bookings OWNER TO admin_user;
+
+-- 14a. Calendar Blocks table
+CREATE TABLE IF NOT EXISTS calendar_blocks (
+  id SERIAL PRIMARY KEY,
+  listing_id INTEGER REFERENCES listings(listing_id) ON DELETE CASCADE,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  reason VARCHAR(50) DEFAULT 'manual',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_calendar_blocks_listing ON calendar_blocks(listing_id);
+ALTER TABLE calendar_blocks OWNER TO admin_user;
 
 -- 15. Conversations table
 CREATE TABLE IF NOT EXISTS conversations (
@@ -182,6 +196,28 @@ CREATE TABLE IF NOT EXISTS saved_listings (
 ALTER TABLE saved_listings OWNER TO admin_user;
 CREATE INDEX IF NOT EXISTS idx_saved_listings_user ON saved_listings(user_id);
 CREATE INDEX IF NOT EXISTS idx_saved_listings_listing ON saved_listings(listing_id);
+
+-- 22. Roommate Profiles table
+CREATE TABLE IF NOT EXISTS roommate_profiles (
+  profile_id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+  age INTEGER,
+  occupation VARCHAR(100),
+  budget_min NUMERIC(10, 2),
+  budget_max NUMERIC(10, 2),
+  bio TEXT,
+  tags TEXT[],
+  avatar_url VARCHAR(255),
+  location VARCHAR(255),
+  gender VARCHAR(20),
+  preferred_gender VARCHAR(20),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 23. Set ownership and indexes for roommate profiles
+ALTER TABLE roommate_profiles OWNER TO admin_user;
+CREATE INDEX IF NOT EXISTS idx_roommate_profiles_user ON roommate_profiles(user_id);
 
 -- Done!
 SELECT 'o. Database setup complete!' AS status;

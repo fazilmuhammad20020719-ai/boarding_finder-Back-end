@@ -90,6 +90,7 @@ const initDb = async () => {
       "ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(20) DEFAULT 'active' CHECK (account_status IN ('active', 'paused', 'removed'));",
       "ALTER TABLE users ADD COLUMN IF NOT EXISTS status_changed_by INTEGER REFERENCES users(id);",
       "ALTER TABLE users ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMP;",
+      "ALTER TABLE listings ADD COLUMN IF NOT EXISTS university VARCHAR(200);",
       // Add CHECK constraint to role if missing (ignoring error if it exists via exception handler in production, but here we just leave it for now or use a safe approach. Actually, PostgreSQL doesn't support ADD CHECK IF NOT EXISTS, so we omit altering existing role check for safety in raw script, though we added it to CREATE TABLE.)
     ];
 
@@ -105,12 +106,136 @@ const initDb = async () => {
           account_status = 'active'
       WHERE verification_status IS NULL OR verification_status = 'pending'
         AND created_at < NOW() - INTERVAL '1 minute';
+      CREATE TABLE IF NOT EXISTS roommate_profiles (
+        profile_id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+        age INTEGER,
+        occupation VARCHAR(100),
+        budget_min NUMERIC(10, 2),
+        budget_max NUMERIC(10, 2),
+        bio TEXT,
+        tags TEXT[],
+        avatar_url VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS roommate_passes (
+        id SERIAL PRIMARY KEY,
+        passer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        passed_on_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(passer_id, passed_on_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS roommate_connections (
+        id SERIAL PRIMARY KEY,
+        requester_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        receiver_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(requester_id, receiver_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS forum_posts (
+        id SERIAL PRIMARY KEY,
+        author_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        excerpt TEXT,
+        content TEXT NOT NULL,
+        category VARCHAR(100),
+        views INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS forum_comments (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER REFERENCES forum_posts(id) ON DELETE CASCADE,
+        author_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS forum_upvotes (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER REFERENCES forum_posts(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(post_id, user_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS leases (
+        id SERIAL PRIMARY KEY,
+        booking_id INTEGER REFERENCES bookings(booking_id) ON DELETE CASCADE UNIQUE,
+        owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        listing_id INTEGER REFERENCES listings(listing_id) ON DELETE CASCADE,
+        rent_amount NUMERIC(10, 2),
+        start_date DATE,
+        end_date DATE,
+        terms TEXT,
+        status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'signed', 'active', 'terminated')),
+        student_signature VARCHAR(255),
+        signed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS payments (
+        id SERIAL PRIMARY KEY,
+        transaction_id VARCHAR(50) UNIQUE NOT NULL,
+        booking_id INTEGER REFERENCES bookings(booking_id) ON DELETE CASCADE,
+        student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        amount NUMERIC(10, 2) NOT NULL,
+        payment_type VARCHAR(50) NOT NULL,
+        method VARCHAR(50),
+        status VARCHAR(20) DEFAULT 'completed',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS maintenance_requests (
+        id SERIAL PRIMARY KEY,
+        ticket_id VARCHAR(50) UNIQUE NOT NULL,
+        booking_id INTEGER REFERENCES bookings(booking_id) ON DELETE CASCADE,
+        student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        listing_id INTEGER REFERENCES listings(listing_id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        category VARCHAR(100),
+        urgency VARCHAR(50),
+        description TEXT,
+        status VARCHAR(50) DEFAULT 'Pending',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        type VARCHAR(50),
+        title VARCHAR(255),
+        message TEXT,
+        link VARCHAR(255),
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS calendar_blocks (
+        id SERIAL PRIMARY KEY,
+        listing_id INTEGER REFERENCES listings(listing_id) ON DELETE CASCADE,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        reason VARCHAR(50) DEFAULT 'manual',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
     `);
 
-    console.log("✅ Database tables initialized & migrated");
-  } catch (err) {
-    console.error("❌ Failed to initialize database tables:", err.message);
-    throw err;
+    console.log("✅ Database initialized successfully.");
+  } catch (error) {
+    console.error("❌ Failed to initialize database tables:", error.message);
+    throw error;
   }
 };
 

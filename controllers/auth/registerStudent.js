@@ -2,6 +2,10 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { query } = require("../../db");
 const { generateOtp, sendOtp } = require("../../utils/sendOtp");
+const {
+  validatePassword, validateEmail, validatePhone,
+  validateName, validateStringLength, collectErrors,
+} = require("../../utils/validators");
 
 const registerStudent = async (req, res) => {
   try {
@@ -16,6 +20,20 @@ const registerStudent = async (req, res) => {
 
     if (!university || !course || !studentId) {
       return res.status(400).json({ message: "University, course, and student ID are required for students." });
+    }
+
+    // ── Input validation ──
+    const validation = collectErrors([
+      validateName(name),
+      validateEmail(email),
+      validatePhone(phone),
+      validatePassword(password),
+      validateStringLength(university, "University", 2, 200),
+      validateStringLength(course, "Course", 2, 200),
+      validateStringLength(studentId, "Student ID", 2, 50),
+    ]);
+    if (!validation.valid) {
+      return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
     }
 
     const existingUser = await query("SELECT id FROM users WHERE email = $1", [email]);

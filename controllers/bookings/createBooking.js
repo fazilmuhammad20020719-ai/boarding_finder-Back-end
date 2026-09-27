@@ -29,9 +29,9 @@ const createBooking = async (req, res) => {
       return res.status(400).json({ error: "You cannot book your own listing" });
     }
 
-    // Check for existing pending or approved bookings
+    // Check for existing bookings that haven't been rejected or cancelled
     const existingBooking = await query(
-      "SELECT booking_id FROM bookings WHERE listing_id = $1 AND seeker_id = $2 AND status IN ('pending', 'approved')",
+      "SELECT booking_id FROM bookings WHERE listing_id = $1 AND seeker_id = $2 AND status NOT IN ('rejected', 'cancelled')",
       [safe_listing_id, seeker_id]
     );
 

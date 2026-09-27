@@ -2,6 +2,10 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { query } = require("../../db");
 const { generateOtp, sendOtp } = require("../../utils/sendOtp");
+const {
+  validatePassword, validateEmail, validatePhone,
+  validateName, validateStringLength, collectErrors,
+} = require("../../utils/validators");
 
 const registerOwner = async (req, res) => {
   try {
@@ -16,6 +20,21 @@ const registerOwner = async (req, res) => {
 
     if (!propertyName || !propertyType || !permitNumber || !propertyAddress) {
       return res.status(400).json({ message: "Property name, type, permit number, and address are required for owners." });
+    }
+
+    // ── Input validation ──
+    const validation = collectErrors([
+      validateName(name),
+      validateEmail(email),
+      validatePhone(phone),
+      validatePassword(password),
+      validateStringLength(propertyName, "Property name", 2, 200),
+      validateStringLength(propertyType, "Property type", 2, 50),
+      validateStringLength(permitNumber, "Permit number", 2, 50),
+      validateStringLength(propertyAddress, "Property address", 5, 500),
+    ]);
+    if (!validation.valid) {
+      return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
     }
 
     const existingUser = await query("SELECT id FROM users WHERE email = $1", [email]);
