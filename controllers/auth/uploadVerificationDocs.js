@@ -1,11 +1,12 @@
 const multer = require("multer");
-const path = require("path");
+const crypto = require("crypto");
 const fs = require("fs");
 const { query } = require("../../db");
-const { uploadFilesToDrive } = require("../../utils/rcloneUpload");
+const { storePrivateFiles } = require("../../utils/rcloneUpload");
+const { DOCUMENT_MIMES } = require("../../utils/fileSignature");
 
 // Config from environment
-const RCLONE_REMOTE = process.env.RCLONE_REMOTE || "gdrive:BoardingFinder/verifications";
+const RCLONE_REMOTE = process.env.RCLONE_VERIFICATION_REMOTE || "gdrive:BoardingFinder/verifications";
 const UPLOAD_TEMP_DIR = process.env.UPLOAD_TEMP_DIR || "/tmp/boarding-uploads";
 
 // Ensure temp directory exists
@@ -19,9 +20,8 @@ const storage = multer.diskStorage({
     cb(null, UPLOAD_TEMP_DIR);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = `${req.user.id}_${Date.now()}`;
-    const ext = path.extname(file.originalname);
-    cb(null, `${uniqueSuffix}${ext}`);
+    // Never trust the client filename; the final name/extension is set after magic-byte checks.
+    cb(null, `${req.user.id}_${crypto.randomUUID()}`);
   },
 });
 
@@ -62,13 +62,12 @@ const uploadVerificationDocs = async (req, res) => {
         return res.status(400).json({ message: "Please upload at least one document." });
       }
 
-      // Upload to Google Drive
-      const fileUrls = uploadFilesToDrive(req.files, RCLONE_REMOTE, UPLOAD_TEMP_DIR);
-
-      if (fileUrls.length === 0) {
-        return res.status(500).json({
-          message: "All file uploads failed. Is rclone configured on this server?",
-        });
+      // Store privately (no public share links); served only via authenticated endpoints
+      let fileRefs;
+      try {
+        fileRefs = storePrivateFiles(req.files, RCLONE_REMOTE, UPLOAD_TEMP_DIR, DOCUMENT_MIMES, "verification");
+      } catch (storeErr) {
+        return res.status(storeErr.status || 500).json({ message: storeErr.message });
       }
 
       // Update user record with document URLs
@@ -79,7 +78,7 @@ const uploadVerificationDocs = async (req, res) => {
              updated_at = NOW()
          WHERE id = $2
          RETURNING id, name, email, role, verification_status, verification_docs`,
-        [fileUrls, userId]
+        [fileRefs, userId]
       );
 
       return res.status(200).json({

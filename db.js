@@ -12,7 +12,7 @@ pool.query("SELECT NOW()")
     try {
       await pool.query(`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'approved';`);
       await pool.query(`ALTER TABLE listings ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0;`);
-      
+
       await pool.query(`
         CREATE TABLE IF NOT EXISTS tickets (
           ticket_id SERIAL PRIMARY KEY,
@@ -22,6 +22,16 @@ pool.query("SELECT NOW()")
           status VARCHAR(20) DEFAULT 'open',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // Tickets also carry public contact-form messages and content reports
+      await pool.query(`
+        ALTER TABLE tickets ADD COLUMN IF NOT EXISTS category VARCHAR(20) DEFAULT 'support';
+        ALTER TABLE tickets ADD COLUMN IF NOT EXISTS contact_name VARCHAR(100);
+        ALTER TABLE tickets ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255);
+        ALTER TABLE tickets ADD COLUMN IF NOT EXISTS target_type VARCHAR(20);
+        ALTER TABLE tickets ADD COLUMN IF NOT EXISTS target_id INTEGER;
       `);
 
       await pool.query(`

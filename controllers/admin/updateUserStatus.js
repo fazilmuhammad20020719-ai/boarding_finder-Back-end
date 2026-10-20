@@ -10,6 +10,10 @@ const updateUserStatus = async (req, res) => {
     return res.status(400).json({ message: "Invalid status value provided." });
   }
 
+  if (Number(id) === req.user.id) {
+    return res.status(400).json({ message: "You cannot change your own account status." });
+  }
+
   try {
     const result = await pool.query(
       `UPDATE users 

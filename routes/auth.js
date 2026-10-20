@@ -11,6 +11,9 @@ const profile = require("../controllers/auth/profile");
 const verifyOtp = require("../controllers/auth/verifyOtp");
 const resendOtp = require("../controllers/auth/resendOtp");
 const uploadVerificationDocs = require("../controllers/auth/uploadVerificationDocs");
+const getVerificationDoc = require("../controllers/auth/getVerificationDoc");
+const { refresh, logout } = require("../controllers/auth/session");
+const { forgotPassword, resetPassword } = require("../controllers/auth/passwordReset");
 
 const router = express.Router();
 
@@ -49,7 +52,13 @@ router.post("/register", registerLimiter, (req, res, next) => {
   } else if (role === "owner") {
     return registerOwner(req, res, next);
   } else if (role === "admin") {
-    return registerAdmin(req, res, next);
+    // Only an existing, authenticated admin may create another admin account.
+    return auth(req, res, () => {
+      if (req.user.role !== "admin") {
+        return res.status(403).json({ message: "Only admins can create admin accounts." });
+      }
+      return registerAdmin(req, res, next);
+    });
   } else {
     return res.status(400).json({ message: "Role must be 'student', 'owner', or 'admin'." });
   }
@@ -59,6 +68,35 @@ router.post("/register", registerLimiter, (req, res, next) => {
 // POST /api/auth/login
 // ─────────────────────────────────────────────
 router.post("/login", loginLimiter, login);
+
+// ─────────────────────────────────────────────
+// POST /api/auth/refresh  — rotate refresh cookie, return new access token
+// POST /api/auth/logout   — revoke refresh cookie
+// ─────────────────────────────────────────────
+const refreshLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: "Too many session refresh requests. Please try again later.",
+});
+router.post("/refresh", refreshLimiter, refresh);
+router.post("/logout", logout);
+
+// ─────────────────────────────────────────────
+// POST /api/auth/forgot-password  — email a single-use reset link
+// POST /api/auth/reset-password   — set a new password with that link
+// ─────────────────────────────────────────────
+const forgotLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  message: "Too many password reset requests. Please try again after 15 minutes.",
+});
+const resetLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many password reset attempts. Please try again after 15 minutes.",
+});
+router.post("/forgot-password", forgotLimiter, forgotPassword);
+router.post("/reset-password", resetLimiter, resetPassword);
 
 // ─────────────────────────────────────────────
 // GET /api/auth/me  (Protected)
@@ -84,6 +122,11 @@ router.post("/resend-otp", auth, otpResendLimiter, resendOtp);
 // POST /api/auth/upload-verification-docs (Protected)
 // ─────────────────────────────────────────────
 router.post("/upload-verification-docs", auth, uploadVerificationDocs);
+
+// ─────────────────────────────────────────────
+// GET /api/auth/verification-docs/:index (Protected — own documents only)
+// ─────────────────────────────────────────────
+router.get("/verification-docs/:index", auth, getVerificationDoc);
 
 module.exports = router;
 

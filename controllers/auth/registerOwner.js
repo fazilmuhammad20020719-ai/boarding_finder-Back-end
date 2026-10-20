@@ -1,5 +1,5 @@
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
+const { issueSession } = require("../../utils/tokens");
 const { query } = require("../../db");
 const { generateOtp, sendOtp } = require("../../utils/sendOtp");
 const {
@@ -51,14 +51,14 @@ const registerOwner = async (req, res) => {
 
     const result = await query(
       `INSERT INTO users (
-        name, email, phone, password_hash, raw_password, role,
+        name, email, phone, password_hash, role,
         property_name, property_type, permit_number, property_address,
         is_email_verified, email_otp, email_otp_expires,
         verification_status, account_status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING id, name, email, phone, role, property_name, property_type, permit_number, property_address,
                 is_email_verified, verification_status, account_status, created_at`,
-      [name, email, phone, passwordHash, password, role,
+      [name, email, phone, passwordHash, role,
        propertyName, propertyType, permitNumber, propertyAddress,
        false, otp, otpExpires,
        'pending', 'active']
@@ -69,11 +69,7 @@ const registerOwner = async (req, res) => {
     // Send OTP email (non-blocking)
     sendOtp(email, otp, name);
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
-    );
+    const token = await issueSession(res, user);
 
     return res.status(201).json({
       message: "Owner account created! Please verify your email.",

@@ -45,6 +45,9 @@ const getListingById = async (req, res) => {
     return res.status(200).json({
       listing: {
         ...result.rows[0],
+        // Never expose the secret calendar feed token publicly
+        ical_token: undefined,
+        ical_import_url: undefined,
         reviews_data: reviews,
         avg_rating: avgRating,
         review_count: reviews.length

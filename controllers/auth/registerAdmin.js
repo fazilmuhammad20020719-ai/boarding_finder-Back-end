@@ -1,5 +1,4 @@
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const { query } = require("../../db");
 const {
   validatePassword, validateEmail, validatePhone,
@@ -37,23 +36,18 @@ const registerAdmin = async (req, res) => {
 
     const result = await query(
       `INSERT INTO users (
-        name, email, phone, password_hash, raw_password, role
-      ) VALUES ($1, $2, $3, $4, $5, $6)
+        name, email, phone, password_hash, role,
+        is_email_verified, verification_status, verified_at, verified_by
+      ) VALUES ($1, $2, $3, $4, 'admin', TRUE, 'verified', NOW(), $5)
       RETURNING id, name, email, phone, role, created_at`,
-      [name, email, phone, passwordHash, password, role]
+      [name, email, phone, passwordHash, req.user.id]
     );
 
     const user = result.rows[0];
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
-    );
 
     return res.status(201).json({
       message: "Admin account created successfully!",
-      token,
       user,
     });
   } catch (err) {

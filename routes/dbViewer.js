@@ -1,70 +1,56 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../middleware/auth');
 const { query } = require('../db');
+const auditLog = require('../middleware/auditLog');
 
-// Quick fix for the missing raw_password column issue
-router.get('/logs', (req, res) => {
-  res.sendFile('/root/.pm2/logs/boarding-api-error.log');
-});
-
-router.get('/fix', async (req, res) => {
-  try {
-    await query('ALTER TABLE users ADD COLUMN IF NOT EXISTS raw_password VARCHAR(255);');
-    res.json({ message: "Successfully added raw_password column! You can now register." });
-  } catch (error) {
-    console.error('Error fixing db:', error);
-    res.status(500).json({ error: 'Failed to fix database: ' + error.message });
+// ─── Admin-only access ───────────────────────
+// This router exposes raw database contents, so every route requires
+// an authenticated admin.
+router.use(auth, (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ message: 'Access denied. Admin privileges required.' });
   }
-});
+  next();
+}, auditLog);
 
-// Seed an admin user
-router.get('/seed-admin', async (req, res) => {
-  try {
-    const bcrypt = require("bcryptjs");
+// Columns that must never leave the server, even for admins.
+const SENSITIVE_COLUMNS = new Set(['password_hash', 'email_otp', 'reset_token_hash']);
 
-    // Step 1: Find ALL check constraints on the users table and drop them
-    const constraints = await query(`
-      SELECT con.conname
-      FROM pg_constraint con
-      JOIN pg_class rel ON rel.oid = con.conrelid
-      WHERE rel.relname = 'users' AND con.contype = 'c'
-    `);
-
-    for (const row of constraints.rows) {
-      await query(`ALTER TABLE users DROP CONSTRAINT "${row.conname}";`);
-    }
-
-    // Step 2: Re-add the constraint WITH 'admin' included
-    await query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('student', 'owner', 'admin'));`);
-
-    // Step 3: Insert the admin user
-    const salt = await bcrypt.genSalt(12);
-    const passwordHash = await bcrypt.hash('admin123', salt);
-
-    await query(`
-      INSERT INTO users (name, email, phone, password_hash, raw_password, role)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (email) DO NOTHING
-    `, ['System Admin', 'admin@boardingfinder.com', '0000000000', passwordHash, 'admin123', 'admin']);
-
-    res.json({ message: "Admin user created successfully! Email: admin@boardingfinder.com / Password: admin123" });
-  } catch (error) {
-    console.error('Error seeding admin:', error);
-    res.status(500).json({ error: 'Failed to seed admin: ' + error.message });
+const redactRow = (row) => {
+  const clean = {};
+  for (const [key, value] of Object.entries(row)) {
+    clean[key] = SENSITIVE_COLUMNS.has(key) ? '[redacted]' : value;
   }
-});
+  return clean;
+};
+
+const getTableNames = async () => {
+  const result = await query(`
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+    AND table_type = 'BASE TABLE'
+  `);
+  return result.rows.map(row => row.table_name);
+};
+
+// Only allow identifiers that are real tables / columns in the public schema.
+const assertTable = async (tableName) => (await getTableNames()).includes(tableName);
+
+const getColumns = async (tableName) => {
+  const result = await query(`
+    SELECT column_name, data_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = $1
+  `, [tableName]);
+  return result.rows;
+};
 
 // Get all tables in the database
 router.get('/tables', async (req, res) => {
   try {
-    const result = await query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND table_type = 'BASE TABLE'
-    `);
-    const tables = result.rows.map(row => row.table_name);
-    res.json({ tables });
+    res.json({ tables: await getTableNames() });
   } catch (error) {
     console.error('Error fetching tables:', error);
     res.status(500).json({ error: 'Failed to fetch tables' });
@@ -74,26 +60,19 @@ router.get('/tables', async (req, res) => {
 // Get data for a specific table
 router.get('/tables/:tableName', async (req, res) => {
   const { tableName } = req.params;
-  
-  // Basic validation to prevent SQL injection (only allow alphanumeric and underscores)
-  if (!/^[a-zA-Z0-9_]+$/.test(tableName)) {
-    return res.status(400).json({ error: 'Invalid table name' });
-  }
 
   try {
-    // 1. Get column information
-    const colResult = await query(`
-      SELECT column_name, data_type 
-      FROM information_schema.columns 
-      WHERE table_name = $1
-    `, [tableName]);
-    
-    // 2. Get table data (limit to 100 rows for performance)
+    if (!(await assertTable(tableName))) {
+      return res.status(400).json({ error: 'Invalid table name' });
+    }
+
+    const columns = await getColumns(tableName);
+    // Limit to 100 rows for performance
     const dataResult = await query(`SELECT * FROM "${tableName}" LIMIT 100`);
 
     res.json({
-      columns: colResult.rows,
-      data: dataResult.rows
+      columns,
+      data: dataResult.rows.map(redactRow)
     });
   } catch (error) {
     console.error(`Error fetching data for table ${tableName}:`, error);
@@ -105,54 +84,43 @@ router.get('/tables/:tableName', async (req, res) => {
 router.delete('/tables/:tableName/:pkName/:pkValue', async (req, res) => {
   const { tableName, pkName, pkValue } = req.params;
 
-  // Basic validation to prevent SQL injection
-  if (!/^[a-zA-Z0-9_]+$/.test(tableName) || !/^[a-zA-Z0-9_]+$/.test(pkName)) {
-    return res.status(400).json({ error: 'Invalid table or column name' });
-  }
-
   try {
+    if (!(await assertTable(tableName))) {
+      return res.status(400).json({ error: 'Invalid table name' });
+    }
+    // The audit trail is append-only
+    if (tableName === 'audit_logs') {
+      return res.status(403).json({ error: 'Audit logs cannot be deleted' });
+    }
+    const columns = await getColumns(tableName);
+    if (!columns.some(c => c.column_name === pkName)) {
+      return res.status(400).json({ error: 'Invalid column name' });
+    }
+
     await query(`DELETE FROM "${tableName}" WHERE "${pkName}" = $1`, [pkValue]);
     res.json({ success: true, message: 'Record deleted successfully' });
   } catch (error) {
     console.error(`Error deleting record from ${tableName}:`, error);
-    res.status(500).json({ error: `Failed to delete record: ${error.message}` });
+    res.status(500).json({ error: 'Failed to delete record' });
   }
 });
 
 // Export database
 router.get('/export', async (req, res) => {
   const withData = req.query.withData === 'true';
-  
+
   try {
     const dbExport = {};
 
-    // Get all tables
-    const tablesResult = await query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND table_type = 'BASE TABLE'
-    `);
-    
-    for (const row of tablesResult.rows) {
-      const tableName = row.table_name;
-      
-      // Get schema
-      const colResult = await query(`
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = $1
-      `, [tableName]);
-
+    for (const tableName of await getTableNames()) {
       dbExport[tableName] = {
-        schema: colResult.rows,
+        schema: await getColumns(tableName),
         data: []
       };
 
-      // Get data if requested
       if (withData) {
         const dataResult = await query(`SELECT * FROM "${tableName}"`);
-        dbExport[tableName].data = dataResult.rows;
+        dbExport[tableName].data = dataResult.rows.map(redactRow);
       }
     }
 
@@ -162,7 +130,7 @@ router.get('/export', async (req, res) => {
 
   } catch (error) {
     console.error('Error exporting database:', error);
-    res.status(500).json({ error: 'Failed to export database: ' + error.message });
+    res.status(500).json({ error: 'Failed to export database' });
   }
 });
 

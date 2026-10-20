@@ -1,13 +1,14 @@
 const { query } = require("../../db");
 const {
   validateTitle, validateDescription, validateStringLength, validateFinancial, collectErrors,
+  validateCoordinates, validateTourUrl,
 } = require("../../utils/validators");
 const { sanitizeHtml } = require("../../utils/sanitize");
 
 const updateListing = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, price, security_deposit, location, latitude, longitude, amenities, image_urls } = req.body;
+    const { title, description, price, security_deposit, location, latitude, longitude, amenities, image_urls, virtual_tour_url } = req.body;
     const owner_id = req.user.id;
 
     if (req.user.role !== "owner") {
@@ -26,6 +27,8 @@ const updateListing = async (req, res) => {
     if (location !== undefined)    checks.push(validateStringLength(location, "Location", 2, 500));
     if (price !== undefined)       checks.push(validateFinancial(price, "Price"));
     if (security_deposit !== undefined) checks.push(validateFinancial(security_deposit, "Security Deposit"));
+    checks.push(validateCoordinates(latitude, longitude));
+    checks.push(validateTourUrl(virtual_tour_url));
     
     if (checks.length > 0) {
       const validation = collectErrors(checks);
@@ -57,6 +60,8 @@ const updateListing = async (req, res) => {
           longitude = COALESCE($7, longitude),
           amenities = COALESCE($8, amenities),
           image_urls = COALESCE($9, image_urls),
+          -- An empty string clears the tour; undefined leaves it unchanged
+          virtual_tour_url = CASE WHEN $11::text IS NULL THEN virtual_tour_url ELSE NULLIF($11::text, '') END,
           updated_at = NOW()
       WHERE listing_id = $10
       RETURNING *;
@@ -72,7 +77,8 @@ const updateListing = async (req, res) => {
       longitude || null,
       amenities || null,
       image_urls || null,
-      id
+      id,
+      virtual_tour_url === undefined ? null : virtual_tour_url,
     ];
 
     const result = await query(sql, values);

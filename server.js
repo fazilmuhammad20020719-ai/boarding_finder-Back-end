@@ -1,6 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const cookieParser = require("cookie-parser");
 const initDb = require("./config/initDb");
 const authRoutes = require("./routes/auth");
 const dbViewerRoutes = require("./routes/dbViewer");
@@ -20,9 +22,8 @@ const notificationsRoutes = require("./routes/notifications");
 const calendarRoutes = require("./routes/calendar");
 const ticketsRoutes = require("./routes/tickets");
 const app = express();
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-app.use("/images/uploads", express.static(path.join(__dirname, "uploads")));
-app.use("/images", express.static(path.join(__dirname, "uploads")));
+// NOTE: backend/uploads holds private identity documents and is intentionally
+// NOT served statically. Use the authenticated document endpoints instead.
 const PORT = process.env.PORT || 5000;
 
 // ─── CORS Configuration ─────────────────────
@@ -33,6 +34,7 @@ const allowedOrigins = [
 ];
 
 const csrfProtection = require("./middleware/csrf");
+const realtime = require("./utils/realtime");
 
 // Merge any extra origins defined in .env (comma-separated)
 if (process.env.CORS_ORIGIN) {
@@ -46,8 +48,11 @@ const corsOptions = {
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
 };
+app.set("trust proxy", 1); // correct client IPs behind a reverse proxy (rate limiting)
+app.use(helmet());
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
+app.use(cookieParser());
 
 // ─── CSRF Protection ──────────────────────────
 app.use(csrfProtection);
@@ -78,10 +83,10 @@ app.use("/api/tickets", ticketsRoutes);
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error("Global Error Handler caught:", err);
-  res.status(500).json({ 
-    message: "An internal error occurred.", 
-    error: err.message, 
-    stack: err.stack 
+  // Never leak stack traces or internal error messages to clients in production
+  res.status(err.status || 500).json({
+    message: "An internal error occurred.",
+    ...(process.env.NODE_ENV !== "production" && { error: err.message }),
   });
 });
 // ─── Start Server ────────────────────────────
@@ -90,14 +95,21 @@ const startServer = async () => {
     // Initialize database tables
     await initDb();
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`🌐 CORS origin: ${process.env.CORS_ORIGIN || "*"}`);
     });
+    // Real-time notifications & chat messages over WebSockets (/api/ws)
+    realtime.attach(server, allowedOrigins);
   } catch (err) {
     console.error("Failed to start server:", err.message);
     process.exit(1);
   }
 };
 
-startServer();
+// Only listen when run directly (`node server.js`); tests import the app instead.
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { app, initDb };

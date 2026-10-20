@@ -1,5 +1,5 @@
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
+const { issueSession } = require("../../utils/tokens");
 const { query } = require("../../db");
 
 const login = async (req, res) => {
@@ -48,11 +48,7 @@ const login = async (req, res) => {
     }
 
     // --- Generate JWT ---
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
-    );
+    const token = await issueSession(res, user);
 
     // Remove password_hash before sending
     const { password_hash, ...userWithoutPassword } = user;

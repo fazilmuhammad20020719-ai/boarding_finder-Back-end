@@ -153,7 +153,43 @@ function collectErrors(results) {
   return { valid: true };
 }
 
+/**
+ * Latitude must be within [-90, 90] and longitude within [-180, 180].
+ */
+function validateCoordinates(latitude, longitude) {
+  for (const [value, name, limit] of [[latitude, "Latitude", 90], [longitude, "Longitude", 180]]) {
+    if (value === undefined || value === null || value === "") continue;
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < -limit || num > limit) {
+      return { valid: false, message: `${name} must be between -${limit} and ${limit}.` };
+    }
+  }
+  return { valid: true };
+}
+
+// Hosts allowed for embedded virtual tours (rendered in a sandboxed iframe)
+const TOUR_HOSTS = ["youtube.com", "www.youtube.com", "youtu.be", "vimeo.com", "player.vimeo.com",
+  "my.matterport.com", "kuula.co", "momento360.com"];
+
+/**
+ * Optional virtual tour link: must be https and from a supported provider.
+ */
+function validateTourUrl(url) {
+  if (url === undefined || url === null || url === "") return { valid: true };
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !TOUR_HOSTS.includes(parsed.hostname) || url.length > 500) {
+      throw new Error();
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, message: "Virtual tour must be an https link from YouTube, Vimeo, Matterport, Kuula or Momento360." };
+  }
+}
+
 module.exports = {
+  validateCoordinates,
+  validateTourUrl,
   validatePassword,
   validateEmail,
   validatePhone,

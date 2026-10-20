@@ -19,7 +19,12 @@ const uploadPhotos = async (req, res) => {
       return res.status(403).json({ message: "Only owners can upload photos." });
     }
 
-    const successfulUrls = uploadFilesToDrive(req.files, RCLONE_REMOTE, UPLOAD_TEMP_DIR);
+    let successfulUrls;
+    try {
+      successfulUrls = await uploadFilesToDrive(req.files, RCLONE_REMOTE, UPLOAD_TEMP_DIR);
+    } catch (uploadErr) {
+      return res.status(uploadErr.status || 500).json({ message: uploadErr.message });
+    }
 
     if (successfulUrls.length === 0) {
       return res.status(500).json({

@@ -1,4 +1,5 @@
 const { query } = require("../db");
+const { emitToUser } = require("../utils/realtime");
 
 const getConversations = async (req, res) => {
   try {
@@ -144,7 +145,16 @@ const sendMessage = async (req, res) => {
     );
 
     // Update conversation updated_at
-    await query("UPDATE conversations SET updated_at = NOW() WHERE conversation_id = $1", [targetConvId]);
+    const convRes = await query(
+      "UPDATE conversations SET updated_at = NOW() WHERE conversation_id = $1 RETURNING seeker_id, owner_id",
+      [targetConvId]
+    );
+
+    // Push to both participants (the sender may have other tabs open)
+    const { seeker_id, owner_id } = convRes.rows[0];
+    const event = { conversation_id: targetConvId, message: msgRes.rows[0] };
+    emitToUser(seeker_id, "message", event);
+    emitToUser(owner_id, "message", event);
 
     res.status(201).json({ message: msgRes.rows[0], conversation_id: targetConvId });
   } catch (err) {

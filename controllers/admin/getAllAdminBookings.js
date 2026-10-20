@@ -1,9 +1,12 @@
+const { parsePagination, paginated } = require("../../utils/pagination");
 const pool = require("../../db");
 
 const getAllAdminBookings = async (req, res) => {
   try {
+    const page = parsePagination(req);
     const result = await pool.query(`
       SELECT 
+        COUNT(*) OVER() AS total_count,
         b.booking_id, b.move_in_date, b.duration_months, b.status, b.total_amount, b.message, b.created_at,
         l.listing_id, l.title as listing_title, l.location as listing_location,
         s.id as seeker_id, s.name as seeker_name, s.email as seeker_email, s.phone as seeker_phone,
@@ -13,9 +16,10 @@ const getAllAdminBookings = async (req, res) => {
       LEFT JOIN users s ON b.seeker_id = s.id
       LEFT JOIN users o ON b.owner_id = o.id
       ORDER BY b.created_at DESC
-    `);
+      LIMIT $1 OFFSET $2
+    `, [page.limit, page.offset]);
 
-    res.json({ bookings: result.rows });
+    res.json(paginated("bookings", result.rows, page));
   } catch (err) {
     console.error("Error fetching all admin bookings:", err);
     res.status(500).json({ message: "Server error" });

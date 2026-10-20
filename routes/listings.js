@@ -29,8 +29,8 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    // Final name/extension is assigned after magic-byte validation
+    cb(null, require("crypto").randomUUID());
   },
 });
 
@@ -38,10 +38,10 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB per file
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
+    if (["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only image files (JPEG, PNG, WebP, GIF) are allowed."));
+      cb(new Error("Only JPEG, PNG and WebP images are allowed."));
     }
   },
 });

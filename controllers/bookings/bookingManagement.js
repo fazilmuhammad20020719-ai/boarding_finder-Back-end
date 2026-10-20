@@ -46,7 +46,7 @@ const getOwnerBookings = async (req, res) => {
 
 const updateBookingStatus = async (req, res) => {
   try {
-    const owner_id = req.user.id;
+    const userId = req.user.id;
     const booking_id = req.params.id;
     const { status } = req.body;
 
@@ -56,14 +56,20 @@ const updateBookingStatus = async (req, res) => {
 
     // Verify ownership
     const bookingRes = await query(
-      "SELECT b.owner_id, b.seeker_id, l.title FROM bookings b JOIN listings l ON b.listing_id = l.listing_id WHERE b.booking_id = $1", 
+"SELECT b.owner_id, b.seeker_id, b.status, l.title FROM bookings b JOIN listings l ON b.listing_id = l.listing_id WHERE b.booking_id = $1",
       [booking_id]
     );
     if (bookingRes.rows.length === 0) {
       return res.status(404).json({ error: "Booking not found" });
     }
 
-    if (bookingRes.rows[0].owner_id !== owner_id && req.user.role !== 'admin') {
+    const isOwner = bookingRes.rows[0].owner_id === userId || req.user.role === 'admin';
+    // Students may only cancel their own pending requests
+    const isSeekerCancelling = bookingRes.rows[0].seeker_id === userId
+      && status === 'cancelled'
+      && bookingRes.rows[0].status === 'pending';
+
+    if (!isOwner && !isSeekerCancelling) {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
@@ -72,8 +78,20 @@ const updateBookingStatus = async (req, res) => {
       [status, booking_id]
     );
 
+    const { seeker_id, owner_id, title } = bookingRes.rows[0];
+
+    if (isSeekerCancelling) {
+      await createNotification(
+        owner_id,
+        'system_alert',
+        "Booking Request Cancelled",
+        `A student cancelled their booking request for ${title}.`,
+        '/manage-reservations'
+      );
+      return res.status(200).json({ message: "Booking cancelled", booking: updated.rows[0] });
+    }
+
     // Trigger Notification for Student
-    const { seeker_id, title } = bookingRes.rows[0];
     let notificationTitle = "Booking Updated";
     let notificationMsg = `Your booking for ${title} has been updated.`;
     
@@ -87,7 +105,7 @@ const updateBookingStatus = async (req, res) => {
 
     await createNotification(
       seeker_id,
-      status === 'approved' ? 'booking_approved' : 'system_alert',
+      status === 'approved' ? 'booking_approved' : status === 'rejected' ? 'booking_rejected' : 'system_alert',
       notificationTitle,
       notificationMsg,
       '/my-bookings'

@@ -1,15 +1,22 @@
 const { query } = require("../../db");
+const { parsePagination, paginated } = require("../../utils/pagination");
 
 const getAllAdminTickets = async (req, res) => {
   try {
     const sql = `
-      SELECT t.*, u.name as user_name, u.email as user_email, u.role as user_role
+      SELECT t.*,
+             COALESCE(u.name, t.contact_name) as user_name,
+             COALESCE(u.email, t.contact_email) as user_email,
+             COALESCE(u.role, 'guest') as user_role,
+             COUNT(*) OVER() AS total_count
       FROM tickets t
-      JOIN users u ON t.user_id = u.id
-      ORDER BY t.created_at DESC;
+      LEFT JOIN users u ON t.user_id = u.id
+      ORDER BY t.created_at DESC
+      LIMIT $1 OFFSET $2;
     `;
-    const result = await query(sql);
-    return res.status(200).json({ tickets: result.rows });
+    const page = parsePagination(req);
+    const result = await query(sql, [page.limit, page.offset]);
+    return res.status(200).json(paginated("tickets", result.rows, page));
   } catch (error) {
     console.error("Error fetching all tickets:", error);
     return res.status(500).json({ message: "Internal server error" });

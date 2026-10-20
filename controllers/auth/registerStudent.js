@@ -1,5 +1,5 @@
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
+const { issueSession } = require("../../utils/tokens");
 const { query } = require("../../db");
 const { generateOtp, sendOtp } = require("../../utils/sendOtp");
 const {
@@ -50,14 +50,14 @@ const registerStudent = async (req, res) => {
 
     const result = await query(
       `INSERT INTO users (
-        name, email, phone, password_hash, raw_password, role,
+        name, email, phone, password_hash, role,
         university, course, student_id,
         is_email_verified, email_otp, email_otp_expires,
         verification_status, account_status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING id, name, email, phone, role, university, course, student_id,
                 is_email_verified, verification_status, account_status, created_at`,
-      [name, email, phone, passwordHash, password, role,
+      [name, email, phone, passwordHash, role,
        university, course, studentId,
        false, otp, otpExpires,
        'pending', 'active']
@@ -68,11 +68,7 @@ const registerStudent = async (req, res) => {
     // Send OTP email (non-blocking — don't fail registration if email fails)
     sendOtp(email, otp, name);
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
-    );
+    const token = await issueSession(res, user);
 
     return res.status(201).json({
       message: "Student account created! Please verify your email.",
