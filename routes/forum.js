@@ -5,7 +5,8 @@ const authMiddleware = require("../middleware/auth");
 const {
   validateForumTitle, validateForumContent, validateStringLength,
 } = require("../utils/validators");
-const { sanitizeHtml } = require("../utils/sanitize");
+// Stored as typed: the React frontend renders forum text as plain text (escaping here double-escaped it)
+const plainText = (value) => String(value).trim();
 
 // GET /api/forum/posts - Fetch all posts
 router.get("/posts", async (req, res) => {
@@ -100,9 +101,9 @@ router.post("/posts", authMiddleware, async (req, res) => {
     }
 
     // ── Input validation & sanitization ──
-    const sanitizedTitle = sanitizeHtml(title);
-    const sanitizedContent = sanitizeHtml(content);
-    const sanitizedExcerpt = excerpt ? sanitizeHtml(excerpt) : sanitizedContent.substring(0, 150);
+    const sanitizedTitle = plainText(title);
+    const sanitizedContent = plainText(content);
+    const sanitizedExcerpt = excerpt ? plainText(excerpt) : sanitizedContent.substring(0, 150);
 
     const titleCheck = validateForumTitle(sanitizedTitle);
     if (!titleCheck.valid) return res.status(400).json({ error: titleCheck.message });
@@ -134,7 +135,7 @@ router.post("/posts/:id/comments", authMiddleware, async (req, res) => {
     }
 
     // ── Input validation & sanitization ──
-    const sanitizedContent = sanitizeHtml(content);
+    const sanitizedContent = plainText(content);
 
     const commentCheck = validateForumContent(sanitizedContent);
     if (!commentCheck.valid) return res.status(400).json({ error: commentCheck.message });

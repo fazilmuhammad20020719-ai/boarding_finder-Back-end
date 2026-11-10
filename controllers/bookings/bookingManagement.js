@@ -63,14 +63,43 @@ const updateBookingStatus = async (req, res) => {
       return res.status(404).json({ error: "Booking not found" });
     }
 
+    const current = bookingRes.rows[0].status;
     const isOwner = bookingRes.rows[0].owner_id === userId || req.user.role === 'admin';
     // Students may only cancel their own pending requests
     const isSeekerCancelling = bookingRes.rows[0].seeker_id === userId
       && status === 'cancelled'
-      && bookingRes.rows[0].status === 'pending';
+      && current === 'pending';
 
     if (!isOwner && !isSeekerCancelling) {
       return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    // Allowed owner transitions: pending → approved/rejected/cancelled, approved → cancelled.
+    // Cancelled and rejected bookings are final (the student books again instead).
+    const OWNER_TRANSITIONS = { pending: ['approved', 'rejected', 'cancelled'], approved: ['cancelled'] };
+    if (!isSeekerCancelling && !(OWNER_TRANSITIONS[current] || []).includes(status)) {
+      return res.status(400).json({ error: `A ${current} booking cannot be changed to ${status}.` });
+    }
+
+    // Approving must not double-book: no overlap with other approved stays or blocked dates
+    if (status === 'approved') {
+      const conflict = await query(
+        `SELECT 1 FROM bookings o, bookings b
+         WHERE b.booking_id = $1 AND o.listing_id = b.listing_id AND o.booking_id <> b.booking_id
+           AND o.status = 'approved'
+           AND o.move_in_date < (b.move_in_date + (b.duration_months || ' months')::interval)
+           AND (o.move_in_date + (o.duration_months || ' months')::interval) > b.move_in_date
+         UNION ALL
+         SELECT 1 FROM calendar_blocks c, bookings b
+         WHERE b.booking_id = $1 AND c.listing_id = b.listing_id
+           AND c.start_date < (b.move_in_date + (b.duration_months || ' months')::interval)
+           AND c.end_date >= b.move_in_date
+         LIMIT 1`,
+        [booking_id]
+      );
+      if (conflict.rows.length > 0) {
+        return res.status(409).json({ error: "These dates overlap another approved booking or blocked dates." });
+      }
     }
 
     const updated = await query(
@@ -101,6 +130,9 @@ const updateBookingStatus = async (req, res) => {
     } else if (status === 'rejected') {
       notificationTitle = "Booking Rejected";
       notificationMsg = `Unfortunately, your booking request for ${title} was rejected.`;
+    } else if (status === 'cancelled') {
+      notificationTitle = "Booking Cancelled";
+      notificationMsg = `Your booking for ${title} has been cancelled by the owner.`;
     }
 
     await createNotification(

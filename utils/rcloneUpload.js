@@ -5,6 +5,32 @@ const crypto = require("crypto");
 const sharp = require("sharp");
 const { detectFileType, mimeFromExt, IMAGE_MIMES } = require("./fileSignature");
 
+/**
+ * Locate a runnable rclone binary.
+ * Node's spawn stops at the first PATH entry named "rclone" even when it is a
+ * broken or self-referencing symlink (ELOOP), whereas bash skips such entries.
+ * Resolve the binary ourselves so a stray link can't break every upload.
+ * RCLONE_BIN overrides the lookup.
+ */
+const resolveRclone = () => {
+  const candidates = [
+    process.env.RCLONE_BIN,
+    ...String(process.env.PATH || "").split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, "rclone")),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK); // follows symlinks: loops and dangling links throw
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      // not usable — try the next one
+    }
+  }
+  return "rclone"; // fall back to the normal PATH lookup
+};
+
+let rcloneBin = null;
+const rclone = () => (rcloneBin ??= resolveRclone());
+
 // Listing photos are resized and re-encoded before upload: smaller files load
 // faster, and re-encoding strips EXIF metadata (including GPS location).
 const MAX_PHOTO_DIMENSION = 1600;
@@ -103,10 +129,10 @@ const uploadFilesToDrive = async (files, remoteFolder, tempDir, allowedMimes = I
 
     try {
       const remotePath = `${remoteFolder}/${batchId}`;
-      execFileSync("rclone", ["copy", tempFilePath, remotePath], { timeout: 60000, stdio: "pipe" });
+      execFileSync(rclone(), ["copy", tempFilePath, remotePath], { timeout: 60000, stdio: "pipe" });
 
       // Get public shareable link
-      const linkOutput = execFileSync("rclone", ["link", `${remotePath}/${uniqueName}`], {
+      const linkOutput = execFileSync(rclone(), ["link", `${remotePath}/${uniqueName}`], {
         timeout: 30000,
         stdio: "pipe",
       }).toString().trim();
@@ -134,7 +160,7 @@ const storePrivateFiles = (files, remoteFolder, tempDir, allowedMimes, localSubd
   for (const { uniqueName, tempFilePath } of prepared) {
     const remotePath = `${remoteFolder}/${batchId}`;
     try {
-      execFileSync("rclone", ["copy", tempFilePath, remotePath], { timeout: 60000, stdio: "pipe" });
+      execFileSync(rclone(), ["copy", tempFilePath, remotePath], { timeout: 60000, stdio: "pipe" });
       refs.push(`rclone:${remotePath}/${uniqueName}`);
     } catch (rcloneErr) {
       console.error(`rclone error for private file ${uniqueName}, storing locally:`, rcloneErr.message);
@@ -158,7 +184,7 @@ const streamPrivateFile = (ref, res) => {
     const remotePath = ref.slice("rclone:".length);
     res.setHeader("Content-Type", mimeFromExt(remotePath));
     res.setHeader("Cache-Control", "private, no-store");
-    const child = spawn("rclone", ["cat", remotePath]);
+    const child = spawn(rclone(), ["cat", remotePath]);
     child.stdout.pipe(res);
     child.on("error", () => {
       if (!res.headersSent) res.status(500).json({ message: "Failed to read document." });
@@ -197,4 +223,4 @@ const streamPrivateFile = (ref, res) => {
   return res.sendFile(resolved);
 };
 
-module.exports = { uploadFilesToDrive, storePrivateFiles, streamPrivateFile, toDirectImageUrl };
+module.exports = { uploadFilesToDrive, storePrivateFiles, streamPrivateFile, toDirectImageUrl, resolveRclone };

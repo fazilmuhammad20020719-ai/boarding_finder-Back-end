@@ -69,17 +69,43 @@ const getMessages = async (req, res) => {
 const sendMessage = async (req, res) => {
   try {
     const user_id = req.user.id;
-    const { listing_id, receiver_id, text, conversation_id } = req.body;
+    const { listing_id, receiver_id, conversation_id } = req.body;
+    const text = typeof req.body.text === "string" ? req.body.text.trim() : "";
+
+    if (!text) return res.status(400).json({ error: "Message cannot be empty" });
+    if (text.length > 2000) return res.status(400).json({ error: "Message must not exceed 2000 characters" });
 
     let targetConvId = conversation_id;
 
     if (!targetConvId) {
       if (!receiver_id) return res.status(400).json({ error: "Missing receiver_id to start conversation" });
-      
+      if (Number(receiver_id) === Number(user_id)) return res.status(400).json({ error: "You cannot message yourself" });
+
       // Determine seeker and owner
       const isOwner = req.user.role === 'owner';
       const ownerId = isOwner ? user_id : receiver_id;
       const seekerId = isOwner ? receiver_id : user_id;
+
+      if (listing_id) {
+        // Listing chats are only between that listing's owner and another user
+        const listingRes = await query("SELECT owner_id FROM listings WHERE listing_id = $1", [listing_id]);
+        if (listingRes.rows.length === 0) return res.status(404).json({ error: "Listing not found" });
+        if (Number(listingRes.rows[0].owner_id) !== Number(ownerId)) {
+          return res.status(403).json({ error: "You can only message the owner of this listing" });
+        }
+        const receiverRes = await query("SELECT 1 FROM users WHERE id = $1", [receiver_id]);
+        if (receiverRes.rows.length === 0) return res.status(404).json({ error: "Recipient not found" });
+      } else {
+        // Chats without a listing are only for accepted roommate connections
+        const conn = await query(
+          `SELECT 1 FROM roommate_connections
+           WHERE status = 'accepted' AND ((requester_id = $1 AND receiver_id = $2) OR (requester_id = $2 AND receiver_id = $1))`,
+          [user_id, receiver_id]
+        );
+        if (conn.rows.length === 0) {
+          return res.status(403).json({ error: "You can only message roommates you are connected with" });
+        }
+      }
 
       // Check if conversation exists (with or without listing_id)
       let checkConv;
@@ -168,8 +194,11 @@ const markAsRead = async (req, res) => {
     const { conversationId } = req.params;
     const user_id = req.user.id;
 
+    // Only participants may mark a conversation as read
     await query(
-      "UPDATE messages SET is_read = TRUE WHERE conversation_id = $1 AND sender_id != $2 AND is_read = FALSE",
+      `UPDATE messages SET is_read = TRUE
+       WHERE conversation_id = $1 AND sender_id != $2 AND is_read = FALSE
+         AND EXISTS (SELECT 1 FROM conversations c WHERE c.conversation_id = $1 AND (c.seeker_id = $2 OR c.owner_id = $2))`,
       [conversationId, user_id]
     );
 

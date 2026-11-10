@@ -7,7 +7,8 @@ const getPlatformAnalytics = async (req, res) => {
       usersResult,
       listingsResult,
       bookingsResult,
-      reviewsResult
+      reviewsResult,
+      paymentsResult
     ] = await Promise.all([
       // User Metrics
       pool.query(`
@@ -48,6 +49,13 @@ const getPlatformAnalytics = async (req, res) => {
           COUNT(*) as total_reviews,
           COALESCE(AVG(rating), 0) as average_rating
         FROM reviews
+      `),
+
+      // Money actually received (completed payments), not just approved booking values
+      pool.query(`
+        SELECT COALESCE(SUM(amount), 0) AS paid
+        FROM payments
+        WHERE LOWER(status) = 'completed'
       `)
     ]);
 
@@ -58,8 +66,9 @@ const getPlatformAnalytics = async (req, res) => {
 
     // Assuming a 5% platform fee for analytics visualization purposes
     const platformFeePercentage = 0.05;
-    const totalRevenue = parseFloat(bookingStats.total_revenue);
+    const totalRevenue = parseFloat(paymentsResult.rows[0].paid);
     const platformRevenue = totalRevenue * platformFeePercentage;
+    const bookedValue = parseFloat(bookingStats.total_revenue);
 
     res.status(200).json({
       analytics: {
@@ -83,8 +92,9 @@ const getPlatformAnalytics = async (req, res) => {
           cancelled: parseInt(bookingStats.cancelled_bookings || 0),
         },
         revenue: {
-          totalGross: totalRevenue,
+          totalGross: totalRevenue,      // completed payments
           platformNet: platformRevenue,
+          bookedValue,                   // value of approved bookings (not necessarily paid)
         },
         reviews: {
           total: parseInt(reviewStats.total_reviews || 0),

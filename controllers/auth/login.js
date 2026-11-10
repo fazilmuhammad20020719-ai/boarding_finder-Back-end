@@ -15,7 +15,7 @@ const login = async (req, res) => {
       `SELECT id, name, email, phone, password_hash, role,
               university, course, student_id,
               property_name, property_type, permit_number, property_address,
-              is_email_verified, verification_status, verification_docs,
+              is_email_verified, verification_status, verification_docs, verification_note,
               account_status, created_at
        FROM users WHERE email = $1`,
       [email]
@@ -36,7 +36,7 @@ const login = async (req, res) => {
     // --- Check account status (owner management controls) ---
     if (user.account_status === 'paused') {
       return res.status(403).json({
-        message: "Your account has been temporarily paused by the property owner. Please contact them for more information.",
+        message: "Your account has been temporarily paused. Please contact your property owner or BoardingFinder support for more information.",
         account_status: 'paused'
       });
     }

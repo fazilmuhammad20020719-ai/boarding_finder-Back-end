@@ -21,11 +21,12 @@ const duplicateListing = async (req, res) => {
     // Insert duplicated listing
     const insertSql = `
       INSERT INTO listings (
-        owner_id, title, description, price, security_deposit, 
-        location, latitude, longitude, amenities, image_urls, 
-        approval_status, is_paused, views
-      ) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        owner_id, title, description, price, security_deposit,
+        location, latitude, longitude, amenities, image_urls,
+        approval_status, is_paused, views,
+        virtual_tour_url, university, property_type, distance_to_university, min_stay_months, house_rules
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *;
     `;
     
@@ -45,10 +46,17 @@ const duplicateListing = async (req, res) => {
       original.image_urls,
       'pending', // Duplicates should arguably go to pending, or 'approved' if auto-approved
       false, // is_paused
-      0 // views start at 0
+      0, // views start at 0
+      original.virtual_tour_url,
+      original.university,
+      original.property_type,
+      original.distance_to_university,
+      original.min_stay_months,
+      original.house_rules || {},
     ]);
 
-    res.status(201).json({ message: "Listing duplicated successfully", listing: duplicatedRes.rows[0] });
+    const { ical_token, ical_import_url, ...listing } = duplicatedRes.rows[0];
+    res.status(201).json({ message: "Listing duplicated successfully", listing });
   } catch (err) {
     console.error("Error duplicating listing:", err);
     res.status(500).json({ message: "Internal server error" });

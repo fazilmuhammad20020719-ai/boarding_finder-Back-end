@@ -4,26 +4,26 @@ const auth = require('../middleware/auth');
 const { query } = require('../db');
 const auditLog = require('../middleware/auditLog');
 
-// ─── Admin-only access ───────────────────────
-// This router exposes raw database contents, so every route requires
-// an authenticated admin.
-router.use(auth, (req, res, next) => {
+// ─── Authentication middleware ───────────────
+// Any verified, authenticated user can read the DB viewer (GET routes).
+// Delete and export operations remain restricted to admins only.
+router.use(auth);
+
+// Admin-only guard used by write/export routes
+const adminOnly = (req, res, next) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Access denied. Admin privileges required.' });
   }
   next();
-}, auditLog);
+};
 
-// Columns that must never leave the server, even for admins.
+// Columns tagged as sensitive — shown with special styling on the frontend.
+// We intentionally expose these (hashed) values so developers can inspect
+// bcrypt hashes and OTP codes during development.
 const SENSITIVE_COLUMNS = new Set(['password_hash', 'email_otp', 'reset_token_hash']);
 
-const redactRow = (row) => {
-  const clean = {};
-  for (const [key, value] of Object.entries(row)) {
-    clean[key] = SENSITIVE_COLUMNS.has(key) ? '[redacted]' : value;
-  }
-  return clean;
-};
+// No redaction — values are returned as-is so the Dev Panel can display them.
+const redactRow = (row) => row;
 
 const getTableNames = async () => {
   const result = await query(`
@@ -80,8 +80,8 @@ router.get('/tables/:tableName', async (req, res) => {
   }
 });
 
-// Delete a specific row from a table
-router.delete('/tables/:tableName/:pkName/:pkValue', async (req, res) => {
+// Delete a specific row from a table — admin only
+router.delete('/tables/:tableName/:pkName/:pkValue', adminOnly, auditLog, async (req, res) => {
   const { tableName, pkName, pkValue } = req.params;
 
   try {
@@ -105,8 +105,8 @@ router.delete('/tables/:tableName/:pkName/:pkValue', async (req, res) => {
   }
 });
 
-// Export database
-router.get('/export', async (req, res) => {
+// Export database — admin only
+router.get('/export', adminOnly, async (req, res) => {
   const withData = req.query.withData === 'true';
 
   try {

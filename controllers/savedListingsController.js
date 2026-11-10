@@ -5,14 +5,20 @@ const getSavedListings = async (req, res) => {
   try {
     const userId = req.user.id; // From verifyToken middleware
     const { rows } = await pool.query(
-      `SELECT l.*, s.saved_id, s.created_at as saved_at
+      `SELECT l.*, s.saved_id, s.created_at as saved_at, rv.avg_rating, rv.review_count
        FROM saved_listings s
        JOIN listings l ON s.listing_id = l.listing_id
+       LEFT JOIN LATERAL (
+         SELECT ROUND(AVG(r.rating)::numeric, 1) AS avg_rating, COUNT(*)::int AS review_count
+         FROM reviews r
+         WHERE r.listing_id = l.listing_id AND COALESCE(r.status, 'approved') = 'approved'
+       ) rv ON TRUE
        WHERE s.user_id = $1
        ORDER BY s.created_at DESC`,
       [userId]
     );
-    res.json(rows);
+    // Never hand out the owner's secret calendar feed token
+    res.json(rows.map(({ ical_token, ical_import_url, ...listing }) => listing));
   } catch (err) {
     console.error("Error fetching saved listings:", err.message);
     res.status(500).json({ message: "Server error" });

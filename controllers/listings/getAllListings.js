@@ -26,12 +26,18 @@ const getAllListings = async (req, res) => {
     params.push(page.limit, page.offset);
 
     const sql = `
-      SELECT l.*, u.name as owner_name, u.email as owner_email,
+      SELECT l.*, u.name as owner_name,
              COUNT(*) OVER() AS total_count,
              promo.plan_id AS promotion_plan,
-             (promo.plan_id IS NOT NULL) AS is_promoted
+             (promo.plan_id IS NOT NULL) AS is_promoted,
+             rv.avg_rating, rv.review_count
       FROM listings l
       JOIN users u ON l.owner_id = u.id
+      LEFT JOIN LATERAL (
+        SELECT ROUND(AVG(r.rating)::numeric, 1) AS avg_rating, COUNT(*)::int AS review_count
+        FROM reviews r
+        WHERE r.listing_id = l.listing_id AND COALESCE(r.status, 'approved') = 'approved'
+      ) rv ON TRUE
       LEFT JOIN LATERAL (
         SELECT p.plan_id FROM promoted_listings p
         WHERE p.listing_id = l.listing_id AND NOW() BETWEEN p.starts_at AND p.ends_at

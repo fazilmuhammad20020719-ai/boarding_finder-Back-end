@@ -3,7 +3,8 @@ const { emitToUser } = require('./realtime');
 const { sendEmail } = require('./sendOtp');
 
 // Notification types that are also delivered by email
-const EMAIL_TYPES = new Set(['booking_request', 'booking_approved', 'booking_rejected', 'payment_received', 'payment_receipt']);
+const EMAIL_TYPES = new Set(['booking_request', 'booking_approved', 'booking_rejected', 'payment_received', 'payment_receipt',
+  'account_verified', 'account_rejected']);
 // Urgent types that are also sent by SMS (only when Twilio is configured)
 const SMS_TYPES = new Set(['booking_request']);
 

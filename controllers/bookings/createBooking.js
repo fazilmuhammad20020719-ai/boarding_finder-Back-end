@@ -27,7 +27,7 @@ const createBooking = async (req, res) => {
 
     // Get the listing details to find owner and price
     const listingResult = await query(
-      "SELECT owner_id, price, title, approval_status, is_paused FROM listings WHERE listing_id = $1",
+      "SELECT owner_id, price, title, approval_status, is_paused, min_stay_months FROM listings WHERE listing_id = $1",
       [safe_listing_id]
     );
 
@@ -39,7 +39,10 @@ const createBooking = async (req, res) => {
       return res.status(400).json({ error: "This listing is not currently accepting bookings" });
     }
 
-    const { owner_id, price } = listingResult.rows[0];
+    const { owner_id, price, min_stay_months } = listingResult.rows[0];
+    if (min_stay_months && safe_duration_months < min_stay_months) {
+      return res.status(400).json({ error: `This property has a minimum stay of ${min_stay_months} months.` });
+    }
     const safe_owner_id = parseInt(owner_id, 10);
 
     if (safe_owner_id === seeker_id) {

@@ -2,12 +2,15 @@ const { query } = require("../../db");
 
 const getStats = async (req, res) => {
   try {
+    // Only listings the public can actually see
+    const PUBLIC = "(approval_status = 'approved' OR approval_status IS NULL) AND COALESCE(is_paused, FALSE) = FALSE";
+
     // 1. Active Listings
-    const listingsResult = await query("SELECT COUNT(*) FROM listings");
+    const listingsResult = await query(`SELECT COUNT(*) FROM listings WHERE ${PUBLIC}`);
     const activeListings = parseInt(listingsResult.rows[0].count, 10);
 
     // 2. Partner Universities (distinct universities)
-    const uniResult = await query("SELECT COUNT(DISTINCT university) FROM listings WHERE university IS NOT NULL AND university != ''");
+    const uniResult = await query(`SELECT COUNT(DISTINCT university) FROM listings WHERE university IS NOT NULL AND university != '' AND ${PUBLIC}`);
     const partnerUniversities = parseInt(uniResult.rows[0].count, 10);
 
     // 3. Students Placed (approved bookings)
@@ -15,7 +18,7 @@ const getStats = async (req, res) => {
     const studentsPlaced = parseInt(bookingsResult.rows[0].count, 10);
 
     // 4. Average Rating
-    const ratingsResult = await query("SELECT AVG(rating) FROM reviews");
+    const ratingsResult = await query("SELECT AVG(rating) FROM reviews WHERE COALESCE(status, 'approved') = 'approved'");
     const avgRating = parseFloat(ratingsResult.rows[0].avg) || 0;
 
     return res.status(200).json({

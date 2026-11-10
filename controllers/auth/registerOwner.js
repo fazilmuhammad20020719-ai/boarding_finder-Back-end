@@ -18,20 +18,25 @@ const registerOwner = async (req, res) => {
       return res.status(400).json({ message: "Name, email, password and role are required." });
     }
 
-    if (!propertyName || !propertyType || !permitNumber || !propertyAddress) {
-      return res.status(400).json({ message: "Property name, type, permit number, and address are required for owners." });
-    }
+    // Property details are optional at sign-up; blank values are stored as NULL
+    const optional = (value) => (typeof value === "string" && value.trim() ? value.trim() : null);
+    const property = {
+      name: optional(propertyName),
+      type: optional(propertyType),
+      permit: optional(permitNumber),
+      address: optional(propertyAddress),
+    };
 
-    // ── Input validation ──
+    // ── Input validation (property fields only when provided) ──
     const validation = collectErrors([
       validateName(name),
       validateEmail(email),
       validatePhone(phone),
       validatePassword(password),
-      validateStringLength(propertyName, "Property name", 2, 200),
-      validateStringLength(propertyType, "Property type", 2, 50),
-      validateStringLength(permitNumber, "Permit number", 2, 50),
-      validateStringLength(propertyAddress, "Property address", 5, 500),
+      ...(property.name ? [validateStringLength(property.name, "Property name", 2, 200)] : []),
+      ...(property.type ? [validateStringLength(property.type, "Property type", 2, 50)] : []),
+      ...(property.permit ? [validateStringLength(property.permit, "Permit number", 2, 50)] : []),
+      ...(property.address ? [validateStringLength(property.address, "Property address", 5, 500)] : []),
     ]);
     if (!validation.valid) {
       return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
@@ -59,7 +64,7 @@ const registerOwner = async (req, res) => {
       RETURNING id, name, email, phone, role, property_name, property_type, permit_number, property_address,
                 is_email_verified, verification_status, account_status, created_at`,
       [name, email, phone, passwordHash, role,
-       propertyName, propertyType, permitNumber, propertyAddress,
+       property.name, property.type, property.permit, property.address,
        false, otp, otpExpires,
        'pending', 'active']
     );

@@ -118,3 +118,40 @@ test("SMS numbers are normalised to E.164", () => {
   assert.equal(toE164("+44 20 7946 0958"), "+442079460958");
   assert.equal(toE164(""), null);
 });
+
+test("listing details are whitelisted and normalised", () => {
+  const { parseListingDetails } = require("../utils/listingDetails");
+  const ok = parseListingDetails({
+    university: " Rajarata University of Sri Lanka ", property_type: "Private Room",
+    distance_to_university: "500m - 1km", min_stay_months: "3",
+    house_rules: { noSmoking: true, noPets: "yes", curfew: false, hacked: true },
+  });
+  assert.equal(ok.error, undefined);
+  assert.deepEqual(ok.values, {
+    university: "Rajarata University of Sri Lanka", property_type: "Private Room",
+    distance_to_university: "500m - 1km", min_stay_months: 3,
+    house_rules: { noSmoking: true, noPets: false, curfew: false },
+  });
+  assert.deepEqual(parseListingDetails({}).values, {}, "fields not sent are left untouched");
+  assert.equal(parseListingDetails({ university: "" }).values.university, null, "blank clears");
+  assert.ok(parseListingDetails({ property_type: "Castle" }).error);
+  assert.ok(parseListingDetails({ min_stay_months: 5 }).error);
+  assert.ok(parseListingDetails({ house_rules: "not json" }).error);
+});
+
+test("rclone lookup skips self-referencing symlinks", { skip: process.platform === "win32" && "symlinks need admin rights on Windows" }, () => {
+  const { resolveRclone } = require("../utils/rcloneUpload");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bf-rclone-"));
+  const loopDir = path.join(dir, "loop"); const realDir = path.join(dir, "real");
+  fs.mkdirSync(loopDir); fs.mkdirSync(realDir);
+  fs.symlinkSync(path.join(loopDir, "rclone"), path.join(loopDir, "rclone")); // points at itself, like /usr/local/bin/rclone
+  fs.writeFileSync(path.join(realDir, "rclone"), "#!/bin/sh\n", { mode: 0o755 });
+  const oldPath = process.env.PATH;
+  process.env.PATH = [loopDir, realDir].join(path.delimiter);
+  try {
+    assert.equal(resolveRclone(), path.join(realDir, "rclone"));
+  } finally {
+    process.env.PATH = oldPath;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

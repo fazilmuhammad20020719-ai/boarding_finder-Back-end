@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require("multer");
 const path = require("path");
 const auth = require("../middleware/auth");
+const optionalAuth = require("../middleware/optionalAuth");
 
 const { createListing } = require("../controllers/listings/createListing");
 const { getAllListings } = require("../controllers/listings/getAllListings");
@@ -56,8 +57,9 @@ router.get("/owner/mine", auth, getMyListings);
 // Photo upload route (must be before /:id to avoid conflict)
 router.post("/upload", auth, upload.array("photos", 5), uploadPhotos);
 
-// Public route for specific ID
-router.get("/:id", getListingById);
+// Public route for specific ID (signed-in users also get owner contact details;
+// owners/admins can see their non-public listings)
+router.get("/:id", optionalAuth, getListingById);
 router.get("/:id/neighborhood", getNeighborhoodDetails);
 
 // Protected routes (Owner only)

@@ -1,5 +1,6 @@
 const { query } = require("../../db");
-const { sanitizeHtml: escapeHTML } = require("../../utils/sanitize");
+// Stored as typed: the admin dashboard renders ticket text as plain text (escaping here double-escaped it)
+const plainText = (value) => String(value).trim();
 const { validateEmail, validateName } = require("../../utils/validators");
 
 const createTicket = async (req, res) => {
@@ -11,8 +12,8 @@ const createTicket = async (req, res) => {
       return res.status(400).json({ message: "Subject and description are required." });
     }
 
-    const safeSubject = escapeHTML(subject);
-    const safeDescription = escapeHTML(description);
+    const safeSubject = plainText(subject);
+    const safeDescription = plainText(description);
 
     const sql = `
       INSERT INTO tickets (user_id, subject, description)
@@ -66,7 +67,7 @@ const createContactMessage = async (req, res) => {
       `INSERT INTO tickets (user_id, subject, description, category, contact_name, contact_email)
        VALUES (NULL, $1, $2, 'contact', $3, $4)
        RETURNING ticket_id`,
-      [escapeHTML(subject.trim()), escapeHTML(message.trim()), escapeHTML(name.trim()), email.trim().toLowerCase()]
+      [plainText(subject.trim()), plainText(message.trim()), plainText(name.trim()), email.trim().toLowerCase()]
     );
 
     return res.status(201).json({ message: "Message sent! We'll get back to you soon.", ticket_id: result.rows[0].ticket_id });
@@ -96,8 +97,8 @@ const createReport = async (req, res) => {
        RETURNING ticket_id`,
       [
         req.user.id,
-        escapeHTML(`[Report] ${label}: ${reason}`).slice(0, 255),
-        escapeHTML(details?.trim() || reason),
+        plainText(`[Report] ${label}: ${reason}`).slice(0, 255),
+        plainText(details?.trim() || reason),
         type,
         Number.isInteger(Number(targetId)) ? Number(targetId) : null,
       ]

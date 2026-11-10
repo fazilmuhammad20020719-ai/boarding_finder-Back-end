@@ -3,7 +3,7 @@ const {
   validateTitle, validateDescription, validateStringLength, validateFinancial, collectErrors,
   validateCoordinates, validateTourUrl,
 } = require("../../utils/validators");
-const { sanitizeHtml } = require("../../utils/sanitize");
+const { parseListingDetails } = require("../../utils/listingDetails");
 
 const updateListing = async (req, res) => {
   try {
@@ -15,39 +15,55 @@ const updateListing = async (req, res) => {
       return res.status(403).json({ message: "Only owners can update listings." });
     }
 
-    // ── Input validation & sanitization (only validate fields that were actually sent) ──
+    // ── Input validation (only validate fields that were actually sent) ──
+    // Text is stored as typed; the frontend renders it as plain text.
     const checks = [];
-    let sanitizedDescription = description;
-    
     if (title !== undefined)       checks.push(validateTitle(title));
-    if (description !== undefined) {
-      sanitizedDescription = sanitizeHtml(description);
-      checks.push(validateDescription(sanitizedDescription));
-    }
+    if (description !== undefined) checks.push(validateDescription(description));
     if (location !== undefined)    checks.push(validateStringLength(location, "Location", 2, 500));
     if (price !== undefined)       checks.push(validateFinancial(price, "Price"));
     if (security_deposit !== undefined) checks.push(validateFinancial(security_deposit, "Security Deposit"));
     checks.push(validateCoordinates(latitude, longitude));
     checks.push(validateTourUrl(virtual_tour_url));
-    
-    if (checks.length > 0) {
-      const validation = collectErrors(checks);
-      if (!validation.valid) {
-        return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
-      }
+
+    const validation = collectErrors(checks);
+    if (!validation.valid) {
+      return res.status(400).json({ message: validation.errors[0], errors: validation.errors });
+    }
+
+    const details = parseListingDetails(req.body);
+    if (details.error) {
+      return res.status(400).json({ message: details.error });
     }
 
     // Verify ownership
-    const checkSql = "SELECT owner_id FROM listings WHERE listing_id = $1";
-    const checkResult = await query(checkSql, [id]);
-
+    const checkResult = await query("SELECT owner_id FROM listings WHERE listing_id = $1", [id]);
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ message: "Listing not found" });
     }
-
     if (checkResult.rows[0].owner_id !== owner_id) {
       return res.status(403).json({ message: "You are not authorized to update this listing." });
     }
+
+    const values = [
+      title ? title.trim() : null,
+      description ? description.trim() : null,
+      price || null,
+      security_deposit || null,
+      location || null,
+      latitude || null,
+      longitude || null,
+      amenities || null,
+      image_urls || null,
+      id,
+      virtual_tour_url === undefined ? null : virtual_tour_url,
+    ];
+
+    // Listing details: only columns that were sent are changed (a blank value clears them)
+    const detailSets = Object.entries(details.values).map(([column, value]) => {
+      values.push(value);
+      return `${column} = $${values.length}`;
+    });
 
     const sql = `
       UPDATE listings
@@ -62,30 +78,18 @@ const updateListing = async (req, res) => {
           image_urls = COALESCE($9, image_urls),
           -- An empty string clears the tour; undefined leaves it unchanged
           virtual_tour_url = CASE WHEN $11::text IS NULL THEN virtual_tour_url ELSE NULLIF($11::text, '') END,
+          ${detailSets.map((s) => `${s},`).join("\n          ")}
           updated_at = NOW()
       WHERE listing_id = $10
       RETURNING *;
     `;
 
-    const values = [
-      title || null,
-      sanitizedDescription || null,
-      price || null,
-      security_deposit || null,
-      location || null,
-      latitude || null,
-      longitude || null,
-      amenities || null,
-      image_urls || null,
-      id,
-      virtual_tour_url === undefined ? null : virtual_tour_url,
-    ];
-
     const result = await query(sql, values);
+    const { ical_token, ical_import_url, ...listing } = result.rows[0];
 
     return res.status(200).json({
       message: "Listing updated successfully",
-      listing: result.rows[0],
+      listing,
     });
   } catch (err) {
     console.error("Error updating listing:", err);

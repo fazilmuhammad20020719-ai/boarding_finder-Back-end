@@ -150,6 +150,13 @@ const initDb = async () => {
       "ALTER TABLE listings ADD COLUMN IF NOT EXISTS ical_import_url VARCHAR(500);",
       "ALTER TABLE listings ADD COLUMN IF NOT EXISTS ical_synced_at TIMESTAMP;",
       "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP;",
+      // Listing details collected by the listing form
+      "ALTER TABLE listings ADD COLUMN IF NOT EXISTS property_type VARCHAR(30);",
+      "ALTER TABLE listings ADD COLUMN IF NOT EXISTS distance_to_university VARCHAR(30);",
+      "ALTER TABLE listings ADD COLUMN IF NOT EXISTS min_stay_months INTEGER;",
+      "ALTER TABLE listings ADD COLUMN IF NOT EXISTS house_rules JSONB DEFAULT '{}'::jsonb;",
+      // Admin review moderation updates this column
+      "ALTER TABLE reviews ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();",
       // Add CHECK constraint to role if missing (ignoring error if it exists via exception handler in production, but here we just leave it for now or use a safe approach. Actually, PostgreSQL doesn't support ADD CHECK IF NOT EXISTS, so we omit altering existing role check for safety in raw script, though we added it to CREATE TABLE.)
     ];
 

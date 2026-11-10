@@ -6,7 +6,7 @@ const me = async (req, res) => {
       `SELECT id, name, email, phone, role,
               university, course, student_id,
               property_name, property_type, permit_number, property_address,
-              is_email_verified, verification_status, verification_docs,
+              is_email_verified, verification_status, verification_docs, verification_note,
               account_status, created_at
        FROM users WHERE id = $1`,
       [req.user.id]
