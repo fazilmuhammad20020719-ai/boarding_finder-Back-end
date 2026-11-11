@@ -4,26 +4,29 @@ const auth = require('../middleware/auth');
 const { query } = require('../db');
 const auditLog = require('../middleware/auditLog');
 
-// ─── Authentication middleware ───────────────
-// Any verified, authenticated user can read the DB viewer (GET routes).
-// Delete and export operations remain restricted to admins only.
-router.use(auth);
-
-// Admin-only guard used by write/export routes
+// ─── Admin-only access ───────────────────────
+// This router exposes raw database contents, so every route requires an
+// authenticated admin (anyone can sign up as a student, so "any logged-in
+// user" would mean the whole internet).
 const adminOnly = (req, res, next) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Access denied. Admin privileges required.' });
   }
   next();
 };
+router.use(auth, adminOnly, auditLog);
 
-// Columns tagged as sensitive — shown with special styling on the frontend.
-// We intentionally expose these (hashed) values so developers can inspect
-// bcrypt hashes and OTP codes during development.
-const SENSITIVE_COLUMNS = new Set(['password_hash', 'email_otp', 'reset_token_hash']);
+// Columns that must never leave the server, even for admins:
+// password hashes, one-time codes, and session / reset token hashes.
+const SENSITIVE_COLUMNS = new Set(['password_hash', 'email_otp', 'reset_token_hash', 'token_hash']);
 
-// No redaction — values are returned as-is so the Dev Panel can display them.
-const redactRow = (row) => row;
+const redactRow = (row) => {
+  const clean = {};
+  for (const [key, value] of Object.entries(row)) {
+    clean[key] = SENSITIVE_COLUMNS.has(key) && value != null ? '[redacted]' : value;
+  }
+  return clean;
+};
 
 const getTableNames = async () => {
   const result = await query(`
@@ -81,7 +84,7 @@ router.get('/tables/:tableName', async (req, res) => {
 });
 
 // Delete a specific row from a table — admin only
-router.delete('/tables/:tableName/:pkName/:pkValue', adminOnly, auditLog, async (req, res) => {
+router.delete('/tables/:tableName/:pkName/:pkValue', async (req, res) => {
   const { tableName, pkName, pkValue } = req.params;
 
   try {
@@ -106,7 +109,7 @@ router.delete('/tables/:tableName/:pkName/:pkValue', adminOnly, auditLog, async 
 });
 
 // Export database — admin only
-router.get('/export', adminOnly, async (req, res) => {
+router.get('/export', async (req, res) => {
   const withData = req.query.withData === 'true';
 
   try {

@@ -1,2 +1,5 @@
 node_modules/
 .env
+
+# Private user uploads (identity documents) — never commit
+uploads/
