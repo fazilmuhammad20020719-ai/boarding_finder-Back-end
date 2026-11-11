@@ -1,5 +1,53 @@
-const { query } = require("../../db");
+const { query, pool } = require("../../db");
 const { createNotification } = require("../../utils/notificationUtils");
+const { lockAndCount } = require("../../utils/occupancy");
+
+/**
+ * Approve a booking only if a bed is free and its dates avoid blocked periods.
+ * Runs in one transaction with the room row locked, so concurrent approvals
+ * for the last bed are serialised (the second one sees the room full).
+ * @returns {Promise<{booking, full} | {error, code}>}
+ */
+async function approveWithinCapacity(listingId, bookingId, expectedStatus) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const room = await lockAndCount(client, listingId, bookingId);
+    if (!room) { await client.query("ROLLBACK"); return { error: "Listing not found", code: "not_found" }; }
+    if (room.available <= 0) {
+      await client.query("ROLLBACK");
+      return { error: `This room is fully booked (${room.occupied}/${room.capacity} beds taken).`, code: "fully_booked" };
+    }
+    const blocked = await client.query(
+      `SELECT 1 FROM calendar_blocks c, bookings b
+       WHERE b.booking_id = $1 AND c.listing_id = b.listing_id
+         AND c.start_date < (b.move_in_date + (b.duration_months || ' months')::interval)
+         AND c.end_date >= b.move_in_date
+       LIMIT 1`,
+      [bookingId]
+    );
+    if (blocked.rows.length > 0) {
+      await client.query("ROLLBACK");
+      return { error: "These dates overlap dates you have blocked on the calendar.", code: "blocked_dates" };
+    }
+    // Status guard: don't approve if someone changed it meanwhile
+    const upd = await client.query(
+      "UPDATE bookings SET status = 'approved', updated_at = NOW() WHERE booking_id = $1 AND status = $2 RETURNING *",
+      [bookingId, expectedStatus]
+    );
+    if (upd.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return { error: "This booking was changed by someone else. Please refresh.", code: "conflict" };
+    }
+    await client.query("COMMIT");
+    return { booking: upd.rows[0], full: room.available - 1 <= 0 };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 const getMyBookings = async (req, res) => {
   try {
@@ -56,7 +104,7 @@ const updateBookingStatus = async (req, res) => {
 
     // Verify ownership
     const bookingRes = await query(
-"SELECT b.owner_id, b.seeker_id, b.status, l.title FROM bookings b JOIN listings l ON b.listing_id = l.listing_id WHERE b.booking_id = $1",
+"SELECT b.owner_id, b.seeker_id, b.status, b.listing_id, l.title FROM bookings b JOIN listings l ON b.listing_id = l.listing_id WHERE b.booking_id = $1",
       [booking_id]
     );
     if (bookingRes.rows.length === 0) {
@@ -81,31 +129,20 @@ const updateBookingStatus = async (req, res) => {
       return res.status(400).json({ error: `A ${current} booking cannot be changed to ${status}.` });
     }
 
-    // Approving must not double-book: no overlap with other approved stays or blocked dates
+    let updated;
+    let roomNowFull = false;
     if (status === 'approved') {
-      const conflict = await query(
-        `SELECT 1 FROM bookings o, bookings b
-         WHERE b.booking_id = $1 AND o.listing_id = b.listing_id AND o.booking_id <> b.booking_id
-           AND o.status = 'approved'
-           AND o.move_in_date < (b.move_in_date + (b.duration_months || ' months')::interval)
-           AND (o.move_in_date + (o.duration_months || ' months')::interval) > b.move_in_date
-         UNION ALL
-         SELECT 1 FROM calendar_blocks c, bookings b
-         WHERE b.booking_id = $1 AND c.listing_id = b.listing_id
-           AND c.start_date < (b.move_in_date + (b.duration_months || ' months')::interval)
-           AND c.end_date >= b.move_in_date
-         LIMIT 1`,
-        [booking_id]
+      // Approving takes a bed. Lock the room so two approvals can't both take the last one.
+      const result = await approveWithinCapacity(bookingRes.rows[0].listing_id, booking_id, current);
+      if (result.error) return res.status(409).json({ error: result.error, code: result.code });
+      updated = { rows: [result.booking] };
+      roomNowFull = result.full;
+    } else {
+      updated = await query(
+        "UPDATE bookings SET status = $1, updated_at = NOW() WHERE booking_id = $2 RETURNING *",
+        [status, booking_id]
       );
-      if (conflict.rows.length > 0) {
-        return res.status(409).json({ error: "These dates overlap another approved booking or blocked dates." });
-      }
     }
-
-    const updated = await query(
-      "UPDATE bookings SET status = $1, updated_at = NOW() WHERE booking_id = $2 RETURNING *",
-      [status, booking_id]
-    );
 
     const { seeker_id, owner_id, title } = bookingRes.rows[0];
 
@@ -143,7 +180,17 @@ const updateBookingStatus = async (req, res) => {
       '/my-bookings'
     );
 
-    res.status(200).json({ message: "Booking updated", booking: updated.rows[0] });
+    if (roomNowFull) {
+      await createNotification(
+        owner_id,
+        'system_alert',
+        "Room fully booked",
+        `${title} is now fully booked. New booking requests are paused until a bed frees up.`,
+        '/manage-reservations'
+      );
+    }
+
+    res.status(200).json({ message: "Booking updated", booking: updated.rows[0], room_full: roomNowFull });
   } catch (err) {
     console.error("Update booking status error:", err);
     res.status(500).json({ error: "Server error" });
@@ -180,4 +227,4 @@ const checkBookingForListing = async (req, res) => {
   }
 };
 
-module.exports = { getMyBookings, getOwnerBookings, updateBookingStatus, checkBookingForListing };
+module.exports = { getMyBookings, getOwnerBookings, updateBookingStatus, checkBookingForListing, approveWithinCapacity };

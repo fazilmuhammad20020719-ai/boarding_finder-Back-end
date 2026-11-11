@@ -197,3 +197,40 @@ test("review eligibility: only guests who stayed 3+ days or finished their stay"
     dbStub.query = original;
   }
 });
+
+test("room availability: occupied / capacity / fully booked", () => {
+  const { withAvailability } = require("../utils/occupancy");
+  assert.deepEqual(
+    (({ capacity, occupied_count, spaces_available, is_fully_booked }) => ({ capacity, occupied_count, spaces_available, is_fully_booked }))(withAvailability({ capacity: 8, occupied_count: 4 })),
+    { capacity: 8, occupied_count: 4, spaces_available: 4, is_fully_booked: false }
+  );
+  assert.equal(withAvailability({ capacity: 8, occupied_count: 8 }).is_fully_booked, true);
+  assert.equal(withAvailability({ capacity: 8, occupied_count: 8 }).spaces_available, 0);
+  assert.equal(withAvailability({}).capacity, 1, "listings without a capacity count as 1 bed");
+  assert.equal(withAvailability({ capacity: 1, occupied_count: null }).is_fully_booked, false);
+});
+
+test("calendar export only blocks dates when every bed is taken", () => {
+  const { fullyBookedPeriods } = require("../utils/occupancy");
+  const stays = [
+    { start: "2027-01-01", end: "2027-03-01" }, // A
+    { start: "2027-02-01", end: "2027-04-01" }, // B overlaps A in February
+    { start: "2027-05-01", end: "2027-06-01" }, // C alone
+  ];
+  // 2 beds: full only while A and B overlap (Feb 1 .. Feb 28)
+  assert.deepEqual(fullyBookedPeriods(stays, 2), [{ start: "2027-02-01", end: "2027-02-28" }]);
+  // 1 bed: every stay blocks, joined where they touch
+  assert.deepEqual(fullyBookedPeriods(stays, 1), [
+    { start: "2027-01-01", end: "2027-03-31" },
+    { start: "2027-05-01", end: "2027-05-31" },
+  ]);
+  assert.deepEqual(fullyBookedPeriods(stays, 3), [], "never 3 at once");
+});
+
+test("listing capacity is validated", () => {
+  const { parseListingDetails } = require("../utils/listingDetails");
+  assert.equal(parseListingDetails({ capacity: "8" }).values.capacity, 8);
+  assert.ok(parseListingDetails({ capacity: 0 }).error);
+  assert.ok(parseListingDetails({ capacity: 2.5 }).error);
+  assert.ok(parseListingDetails({ capacity: 101 }).error);
+});

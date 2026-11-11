@@ -4,6 +4,7 @@ const {
   validateCoordinates, validateTourUrl,
 } = require("../../utils/validators");
 const { parseListingDetails } = require("../../utils/listingDetails");
+const { HOLDS_BED } = require("../../utils/occupancy");
 
 const updateListing = async (req, res) => {
   try {
@@ -43,6 +44,19 @@ const updateListing = async (req, res) => {
     }
     if (checkResult.rows[0].owner_id !== owner_id) {
       return res.status(403).json({ message: "You are not authorized to update this listing." });
+    }
+
+    // Capacity can't drop below the beds already taken by confirmed bookings
+    if (details.values.capacity !== undefined) {
+      const taken = await query(
+        `SELECT COUNT(*)::int AS n FROM bookings b WHERE b.listing_id = $1 AND ${HOLDS_BED}`,
+        [id]
+      );
+      if (details.values.capacity < taken.rows[0].n) {
+        return res.status(400).json({
+          message: `Capacity can't be less than the ${taken.rows[0].n} confirmed bookings this room already has.`,
+        });
+      }
     }
 
     const values = [

@@ -1,4 +1,5 @@
 const { query } = require("../../db");
+const { OCCUPANCY_LATERAL, withAvailability } = require("../../utils/occupancy");
 
 const getMyListings = async (req, res) => {
   try {
@@ -9,15 +10,16 @@ const getMyListings = async (req, res) => {
     }
 
     const sql = `
-      SELECT *
-      FROM listings
-      WHERE owner_id = $1
-      ORDER BY created_at DESC;
+      SELECT l.*, occ.occupied_count
+      FROM listings l
+      LEFT JOIN LATERAL (${OCCUPANCY_LATERAL}) occ ON TRUE
+      WHERE l.owner_id = $1
+      ORDER BY l.created_at DESC;
     `;
     const result = await query(sql, [owner_id]);
 
     return res.status(200).json({
-      listings: result.rows,
+      listings: result.rows.map(withAvailability),
     });
   } catch (err) {
     console.error("Error fetching my listings:", err);

@@ -1,5 +1,6 @@
 const { query } = require("../../db");
 const { createNotification } = require("../../utils/notificationUtils");
+const { OCCUPANCY_LATERAL, withAvailability } = require("../../utils/occupancy");
 
 const createBooking = async (req, res) => {
   try {
@@ -59,20 +60,27 @@ const createBooking = async (req, res) => {
       return res.status(400).json({ error: "You already have an active booking request for this listing" });
     }
 
-    // Requested stay must not overlap blocked dates (manual, iCal-imported, or approved bookings)
+    // Requested stay must not overlap dates the owner blocked (manual or iCal-imported)
     const conflict = await query(
       `SELECT 1 FROM calendar_blocks
        WHERE listing_id = $1 AND start_date < ($2::date + ($3 || ' months')::interval) AND end_date >= $2::date
-       UNION ALL
-       SELECT 1 FROM bookings
-       WHERE listing_id = $1 AND status = 'approved'
-         AND move_in_date < ($2::date + ($3 || ' months')::interval)
-         AND (move_in_date + (duration_months || ' months')::interval) > $2::date
        LIMIT 1`,
       [safe_listing_id, move_in_date, String(safe_duration_months)]
     );
     if (conflict.rows.length > 0) {
       return res.status(409).json({ error: "The property is not available for the selected dates" });
+    }
+
+    // Shared rooms: refuse new requests once every bed is taken by a confirmed booking
+    const beds = await query(
+      `SELECT l.capacity, occ.occupied_count
+       FROM listings l LEFT JOIN LATERAL (${OCCUPANCY_LATERAL}) occ ON TRUE
+       WHERE l.listing_id = $1`,
+      [safe_listing_id]
+    );
+    const room = withAvailability(beds.rows[0]);
+    if (room.is_fully_booked) {
+      return res.status(409).json({ error: "This room is fully booked.", code: "fully_booked" });
     }
 
     // Calculate total amount

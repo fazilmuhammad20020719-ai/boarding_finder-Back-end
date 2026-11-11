@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const dns = require("dns").promises;
 const net = require("net");
 const { query } = require("../../db");
+const { fullyBookedPeriods } = require("../../utils/occupancy");
 
 const ICAL_REASON = "ical";
 
@@ -47,22 +48,30 @@ const exportIcal = async (req, res) => {
   try {
     const listingId = parseInt(req.params.listingId, 10);
     const token = String(req.params.token || "");
-    const result = await query("SELECT title, ical_token FROM listings WHERE listing_id = $1", [listingId]);
+    const result = await query("SELECT title, ical_token, capacity FROM listings WHERE listing_id = $1", [listingId]);
     const listing = result.rows[0];
 
     const valid = listing?.ical_token && token.length === listing.ical_token.length
       && crypto.timingSafeEqual(Buffer.from(token), Buffer.from(listing.ical_token));
     if (!valid) return res.status(404).send("Not found");
 
-    // Don't re-export blocks we imported from elsewhere (avoids sync loops)
-    const blocks = await query(
+    // Manual blocks (not ones imported from elsewhere — avoids sync loops)
+    const manual = await query(
       `SELECT 'block-' || id AS uid, start_date, end_date FROM calendar_blocks
-       WHERE listing_id = $1 AND reason <> $2
-       UNION ALL
-       SELECT 'booking-' || booking_id, move_in_date, (move_in_date + (duration_months || ' months')::interval)::date
-       FROM bookings WHERE listing_id = $1 AND status = 'approved'`,
+       WHERE listing_id = $1 AND reason <> $2`,
       [listingId, ICAL_REASON]
     );
+    // Shared rooms are only unavailable while EVERY bed is taken by approved bookings
+    const stays = await query(
+      `SELECT to_char(move_in_date, 'YYYY-MM-DD') AS start,
+              to_char((move_in_date + (duration_months || ' months')::interval)::date, 'YYYY-MM-DD') AS "end"
+       FROM bookings WHERE listing_id = $1 AND status = 'approved'`,
+      [listingId]
+    );
+    const full = fullyBookedPeriods(stays.rows, listing.capacity).map((p) => ({
+      uid: `full-${p.start}`, start_date: p.start, end_date: p.end,
+    }));
+    const blocks = { rows: [...manual.rows, ...full] };
 
     const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
     const lines = [

@@ -1,4 +1,5 @@
 const { query } = require("../../db");
+const { OCCUPANCY_LATERAL, withAvailability } = require("../../utils/occupancy");
 const { parsePagination, paginated, escapeLike } = require("../../utils/pagination");
 
 const getAllListings = async (req, res) => {
@@ -30,7 +31,7 @@ const getAllListings = async (req, res) => {
              COUNT(*) OVER() AS total_count,
              promo.plan_id AS promotion_plan,
              (promo.plan_id IS NOT NULL) AS is_promoted,
-             rv.avg_rating, rv.review_count
+             rv.avg_rating, rv.review_count, occ.occupied_count
       FROM listings l
       JOIN users u ON l.owner_id = u.id
       LEFT JOIN LATERAL (
@@ -38,6 +39,7 @@ const getAllListings = async (req, res) => {
         FROM reviews r
         WHERE r.listing_id = l.listing_id AND COALESCE(r.status, 'approved') = 'approved'
       ) rv ON TRUE
+      LEFT JOIN LATERAL (${OCCUPANCY_LATERAL}) occ ON TRUE
       LEFT JOIN LATERAL (
         SELECT p.plan_id FROM promoted_listings p
         WHERE p.listing_id = l.listing_id AND NOW() BETWEEN p.starts_at AND p.ends_at
@@ -54,7 +56,7 @@ const getAllListings = async (req, res) => {
     const result = await query(sql, params);
 
     // Never expose the secret calendar feed token publicly
-    const rows = result.rows.map(({ ical_token, ical_import_url, ...listing }) => listing);
+    const rows = result.rows.map(({ ical_token, ical_import_url, ...listing }) => withAvailability(listing));
     return res.status(200).json(paginated("listings", rows, page));
   } catch (err) {
     console.error("Error fetching listings:", err);

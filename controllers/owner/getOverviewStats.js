@@ -1,4 +1,5 @@
 const { query } = require("../../db");
+const { HOLDS_BED } = require("../../utils/occupancy");
 
 const getOverviewStats = async (req, res) => {
   try {
@@ -15,17 +16,14 @@ const getOverviewStats = async (req, res) => {
     const revResult = await query(revSql, [ownerId]);
     const monthlyRevenue = Number(revResult.rows[0]?.revenue || 0);
 
-    // 2. Occupancy (Total listings vs active approved bookings)
-    const listingsCountSql = `SELECT COUNT(*) as total FROM listings WHERE owner_id = $1`;
-    const listingsCountRes = await query(listingsCountSql, [ownerId]);
-    const totalCapacity = Number(listingsCountRes.rows[0]?.total || 0) * 2; // Assuming ~2 beds per listing for capacity mock if no beds column exists
+    // 2. Occupancy: beds across all the owner's listings vs beds held by confirmed bookings
+    const capacityRes = await query(`SELECT COALESCE(SUM(capacity), 0)::int AS total FROM listings WHERE owner_id = $1`, [ownerId]);
+    const totalCapacity = Number(capacityRes.rows[0]?.total || 0);
 
-    const occupiedSql = `
-      SELECT COUNT(*) as occupied
-      FROM bookings
-      WHERE owner_id = $1 AND status = 'approved'
-    `;
-    const occupiedRes = await query(occupiedSql, [ownerId]);
+    const occupiedRes = await query(
+      `SELECT COUNT(*)::int AS occupied FROM bookings b WHERE b.owner_id = $1 AND ${HOLDS_BED}`,
+      [ownerId]
+    );
     const occupied = Number(occupiedRes.rows[0]?.occupied || 0);
     const occupancyRate = totalCapacity > 0 ? Math.round((occupied / totalCapacity) * 100) : 0;
 
@@ -91,7 +89,7 @@ const getOverviewStats = async (req, res) => {
         monthlyRevenue,
         occupancy: {
           occupied,
-          total: totalCapacity > 0 ? totalCapacity : 5, // Fallback to 5 if owner has no listings so UI doesn't look broken
+          total: totalCapacity, // real total beds (0 when the owner has no listings)
           rate: occupancyRate
         },
         reviews: {

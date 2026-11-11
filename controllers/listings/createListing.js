@@ -43,8 +43,8 @@ const createListing = async (req, res) => {
     const sql = `
       INSERT INTO listings (owner_id, title, description, price, security_deposit, location, latitude, longitude,
                             amenities, image_urls, virtual_tour_url,
-                            university, property_type, distance_to_university, min_stay_months, house_rules)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                            university, property_type, distance_to_university, min_stay_months, house_rules, capacity)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *;
     `;
 
@@ -65,6 +65,7 @@ const createListing = async (req, res) => {
       d.distance_to_university ?? null,
       d.min_stay_months ?? null,
       d.house_rules ?? {},
+      d.capacity ?? 1,
     ];
 
     const result = await query(sql, values);

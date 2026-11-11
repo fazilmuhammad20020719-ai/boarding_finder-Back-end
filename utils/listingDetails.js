@@ -8,6 +8,7 @@ const DISTANCES = [
 ];
 const MIN_STAYS = [1, 3, 6, 12];
 const RULE_KEYS = ["noSmoking", "noPets", "curfew"];
+const MAX_CAPACITY = 100; // beds per listing
 
 /**
  * @param {object} body - request body
@@ -49,6 +50,14 @@ function parseListingDetails(body = {}) {
     }
   }
 
+  if (body.capacity !== undefined) {
+    const beds = Number(body.capacity);
+    if (!Number.isInteger(beds) || beds < 1 || beds > MAX_CAPACITY) {
+      return { error: `Capacity must be a whole number from 1 to ${MAX_CAPACITY}.`, values };
+    }
+    values.capacity = beds;
+  }
+
   if (body.house_rules !== undefined) {
     let rules = body.house_rules;
     if (typeof rules === "string") {
@@ -63,4 +72,4 @@ function parseListingDetails(body = {}) {
   return { values };
 }
 
-module.exports = { parseListingDetails, PROPERTY_TYPES, DISTANCES, MIN_STAYS, RULE_KEYS };
+module.exports = { parseListingDetails, PROPERTY_TYPES, DISTANCES, MIN_STAYS, RULE_KEYS, MAX_CAPACITY };
