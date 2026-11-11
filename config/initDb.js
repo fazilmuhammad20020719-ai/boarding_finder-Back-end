@@ -347,6 +347,13 @@ const initDb = async () => {
       await query(sql);
     }
 
+    // One review per student per listing, enforced by the database
+    try {
+      await query("CREATE UNIQUE INDEX IF NOT EXISTS uq_reviews_listing_user ON reviews(listing_id, user_id);");
+    } catch (e) {
+      console.warn("⚠️ Could not add unique review index (duplicate reviews exist?):", e.message);
+    }
+
     // Trigram index makes location ILIKE '%term%' searches fast. pg_trgm is a
     // trusted extension on PostgreSQL 13+, but skip quietly if not permitted.
     try {

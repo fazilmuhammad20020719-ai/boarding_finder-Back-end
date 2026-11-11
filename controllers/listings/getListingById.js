@@ -1,4 +1,5 @@
 const { query } = require("../../db");
+const { getReviewEligibility } = require("../../utils/reviewEligibility");
 
 const getListingById = async (req, res) => {
   try {
@@ -57,6 +58,9 @@ const getListingById = async (req, res) => {
       ? (reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length).toFixed(1)
       : 0;
 
+    // Whether THIS viewer may rate/review the room (reviews themselves are public)
+    const reviewPermission = await getReviewEligibility(id, viewer);
+
     // Never expose the secret calendar feed token publicly;
     // owner contact details only go to signed-in users.
     const { ical_token, ical_import_url, owner_email, owner_phone, ...listing } = row;
@@ -67,7 +71,8 @@ const getListingById = async (req, res) => {
         ...(viewer ? { owner_email, owner_phone } : {}),
         reviews_data: reviews,
         avg_rating: avgRating,
-        review_count: reviews.length
+        review_count: reviews.length,
+        review_permission: reviewPermission,
       },
     });
   } catch (err) {

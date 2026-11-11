@@ -155,3 +155,45 @@ test("rclone lookup skips self-referencing symlinks", { skip: process.platform =
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("review eligibility: only guests who stayed 3+ days or finished their stay", async () => {
+  // The module captures `query` when it loads, so route it through one switchable function
+  const dbStub = require.cache[require.resolve("../db")].exports;
+  const original = dbStub.query;
+  let current = original;
+  dbStub.query = (...args) => current(...args);
+  delete require.cache[require.resolve("../utils/reviewEligibility")];
+  const { getReviewEligibility } = require("../utils/reviewEligibility");
+  const student = { id: 20, role: "student" };
+  // Fake DB: answers the "already reviewed?" query and the bookings query
+  const fakeDb = ({ reviewed = false, stays = [] }) => async (sql) =>
+    /FROM reviews/.test(sql) ? { rows: reviewed ? [{ "?column?": 1 }] : [] } : { rows: stays };
+  const db = { set query(fn) { current = fn; } };
+  try {
+    assert.equal((await getReviewEligibility(4, undefined)).code, "login");
+    assert.equal((await getReviewEligibility(4, { id: 21, role: "owner" })).code, "role");
+
+    db.query = fakeDb({ stays: [] });
+    assert.equal((await getReviewEligibility(4, student)).code, "no_booking");
+
+    db.query = fakeDb({ stays: [{ move_in_date: "2027-01-10", finished: false, days_in: -60 }] });
+    const early = await getReviewEligibility(4, student);
+    assert.equal(early.canReview, false);
+    assert.equal(early.code, "too_early");
+    assert.match(early.reason, /2027-01-13/, "says when reviewing opens (move-in + 3 days)");
+
+    db.query = fakeDb({ stays: [{ move_in_date: "2026-11-01", finished: false, days_in: 2 }] });
+    assert.equal((await getReviewEligibility(4, student)).canReview, false, "2 days in is not enough");
+
+    db.query = fakeDb({ stays: [{ move_in_date: "2026-11-01", finished: false, days_in: 3 }] });
+    assert.equal((await getReviewEligibility(4, student)).canReview, true, "3 days in is enough");
+
+    db.query = fakeDb({ stays: [{ move_in_date: "2026-10-01", finished: true, days_in: 1 }] });
+    assert.equal((await getReviewEligibility(4, student)).canReview, true, "a finished stay is enough");
+
+    db.query = fakeDb({ reviewed: true, stays: [{ move_in_date: "2026-10-01", finished: true, days_in: 40 }] });
+    assert.equal((await getReviewEligibility(4, student)).code, "already_reviewed");
+  } finally {
+    dbStub.query = original;
+  }
+});
