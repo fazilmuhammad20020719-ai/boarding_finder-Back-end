@@ -15,7 +15,6 @@ const { uploadPhotos } = require("../controllers/listings/upload");
 const { addReview } = require("../controllers/listings/addReview");
 const { getNeighborhoodDetails } = require("../controllers/listings/getNeighborhoodDetails");
 const { pauseListing } = require("../controllers/listings/pauseListing");
-const { duplicateListing } = require("../controllers/listings/duplicateListing");
 const { getListingAnalytics } = require("../controllers/listings/getListingAnalytics");
 
 const { getStats } = require("../controllers/listings/getStats");
@@ -67,7 +66,6 @@ router.post("/", auth, createListing);
 router.put("/:id", auth, updateListing);
 router.delete("/:id", auth, deleteListing);
 router.put("/:id/pause", auth, pauseListing);
-router.post("/:id/duplicate", auth, duplicateListing);
 router.get("/:id/analytics", auth, getListingAnalytics);
 
 // Protected routes (Any logged in user can review)
