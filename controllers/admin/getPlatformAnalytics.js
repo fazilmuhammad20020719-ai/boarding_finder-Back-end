@@ -51,11 +51,11 @@ const getPlatformAnalytics = async (req, res) => {
         FROM reviews
       `),
 
-      // Money actually received (completed payments), not just approved booking values
+      // Cash on Move-in actually received (confirmed by owners), not just approved booking values
       pool.query(`
-        SELECT COALESCE(SUM(amount), 0) AS paid
-        FROM payments
-        WHERE LOWER(status) = 'completed'
+        SELECT COALESCE(SUM(paid_amount), 0) AS paid
+        FROM bookings
+        WHERE payment_status = 'paid'
       `)
     ]);
 

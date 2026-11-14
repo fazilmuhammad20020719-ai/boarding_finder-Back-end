@@ -54,7 +54,7 @@ const getMyBookings = async (req, res) => {
     const seeker_id = req.user.id;
 
     const result = await query(
-      `SELECT b.*, l.title, l.location, l.price, l.image_urls
+      `SELECT b.*, l.title, l.location, l.price, l.security_deposit, l.image_urls
        FROM bookings b
        JOIN listings l ON b.listing_id = l.listing_id
        WHERE b.seeker_id = $1
@@ -74,7 +74,7 @@ const getOwnerBookings = async (req, res) => {
     const owner_id = req.user.id;
 
     const result = await query(
-      `SELECT b.*, l.title, u.name as seeker_name, u.email as seeker_email,
+      `SELECT b.*, l.title, l.price, l.security_deposit, u.name as seeker_name, u.email as seeker_email,
               lease.status as lease_status
        FROM bookings b
        JOIN listings l ON b.listing_id = l.listing_id
@@ -199,6 +199,82 @@ const updateBookingStatus = async (req, res) => {
 
 
 /**
+ * Cash on Move-in: the owner (or an admin) confirms once that the move-in cash
+ * was received, or undoes that confirmation. There is no online payment and no
+ * monthly rent tracking — one confirmation per booking.
+ * PUT /api/bookings/:id/payment  { paid: boolean, amount?: number }
+ */
+const updatePaymentStatus = async (req, res) => {
+  try {
+    const bookingId = Number(req.params.id);
+    const paid = req.body?.paid === true;
+    if (!Number.isInteger(bookingId) || typeof req.body?.paid !== 'boolean') {
+      return res.status(400).json({ error: "Send { paid: true } or { paid: false }" });
+    }
+
+    const found = await query(
+      `SELECT b.booking_id, b.owner_id, b.seeker_id, b.status, b.payment_status, l.title, l.price, l.security_deposit
+       FROM bookings b JOIN listings l ON b.listing_id = l.listing_id WHERE b.booking_id = $1`,
+      [bookingId]
+    );
+    const booking = found.rows[0];
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+    const isAdmin = req.user.role === 'admin';
+    if (booking.owner_id !== req.user.id && !isAdmin) {
+      return res.status(403).json({ error: "Only the owner of this boarding place can confirm payment" });
+    }
+    if (booking.status !== 'approved') {
+      return res.status(400).json({ error: "Payment can only be confirmed for an approved booking" });
+    }
+
+    let amount = null;
+    if (paid) {
+      const expected = Number(booking.price || 0) + Number(booking.security_deposit ?? booking.price ?? 0);
+      amount = req.body.amount === undefined || req.body.amount === null || req.body.amount === ''
+        ? expected
+        : Number(req.body.amount);
+      if (!Number.isFinite(amount) || amount < 0 || amount > 10000000) {
+        return res.status(400).json({ error: "Enter a valid amount" });
+      }
+    }
+
+    const updated = await query(
+      `UPDATE bookings
+       SET payment_status = $1, paid_amount = $2, paid_at = $3, payment_confirmed_by = $4, updated_at = NOW()
+       WHERE booking_id = $5 RETURNING *`,
+      [paid ? 'paid' : 'unpaid', amount, paid ? new Date() : null, paid ? req.user.id : null, bookingId]
+    );
+
+    if (paid) {
+      await createNotification(
+        booking.seeker_id, 'payment_receipt', "Move-in payment confirmed",
+        `The owner confirmed your cash payment of LKR ${amount.toLocaleString()} for ${booking.title}.`,
+        '/payment-history'
+      );
+      if (isAdmin && booking.owner_id !== req.user.id) {
+        await createNotification(
+          booking.owner_id, 'system_alert', "Payment marked as received",
+          `An admin marked the move-in payment for ${booking.title} as received.`,
+          '/earnings'
+        );
+      }
+    } else if (booking.payment_status === 'paid') {
+      await createNotification(
+        booking.seeker_id, 'system_alert', "Payment confirmation removed",
+        `The payment confirmation for ${booking.title} was undone. Contact the owner if this is a mistake.`,
+        '/payment-history'
+      );
+    }
+
+    res.status(200).json({ message: paid ? "Payment confirmed" : "Payment confirmation removed", booking: updated.rows[0] });
+  } catch (err) {
+    console.error("Update payment status error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+/**
  * Check if the current logged-in user already has a booking for a specific listing.
  * Returns { booking: null } if none found, or { booking: {...} } with status if found.
  */
@@ -227,4 +303,4 @@ const checkBookingForListing = async (req, res) => {
   }
 };
 
-module.exports = { getMyBookings, getOwnerBookings, updateBookingStatus, checkBookingForListing, approveWithinCapacity };
+module.exports = { getMyBookings, getOwnerBookings, updateBookingStatus, updatePaymentStatus, checkBookingForListing, approveWithinCapacity };

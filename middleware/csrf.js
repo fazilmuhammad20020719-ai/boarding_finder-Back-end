@@ -1,7 +1,4 @@
 const csrfProtection = (req, res, next) => {
-  // PayHere's server-to-server callback is authenticated by its md5 signature instead
-  if (req.path === '/api/payments/notify') return next();
-
   // Only check state-mutating HTTP methods
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
     // In a stateless JWT API, we rely on the Custom Request Header defense.

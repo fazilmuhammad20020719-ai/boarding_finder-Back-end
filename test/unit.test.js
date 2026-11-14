@@ -6,8 +6,6 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-process.env.PAYHERE_MERCHANT_ID = "1211149";
-process.env.PAYHERE_MERCHANT_SECRET = "test_secret";
 process.env.API_PUBLIC_URL = "https://api.example.com";
 process.env.FRONTEND_URL = "https://app.example.com";
 
@@ -17,35 +15,11 @@ require.cache[require.resolve("../db")] = {
   exports: { query: async () => { throw new Error("DB not available in unit tests"); }, pool: {} },
 };
 
-const payhere = require("../utils/payhere");
 const { parseIcalEvents, isPublicAddress } = require("../controllers/calendar/icalController");
 const { validateTourUrl, validateCoordinates, validatePassword } = require("../utils/validators");
 const { parsePagination, paginated, escapeLike } = require("../utils/pagination");
 const { detectFileType, DOCUMENT_MIMES, IMAGE_MIMES } = require("../utils/fileSignature");
 const { hashToken } = require("../utils/tokens");
-
-const md5 = (s) => crypto.createHash("md5").update(s).digest("hex").toUpperCase();
-
-test("PayHere checkout hash follows the documented formula", () => {
-  const { action, fields } = payhere.buildCheckout({
-    orderId: "BKG-1", amount: 1500, items: "Rent", customer: { name: "Jane Doe", email: "j@example.com" },
-  });
-  assert.equal(action, "https://sandbox.payhere.lk/pay/checkout");
-  assert.equal(fields.amount, "1500.00");
-  assert.equal(fields.hash, md5("1211149" + "BKG-1" + "1500.00" + "LKR" + md5("test_secret")));
-  assert.equal(fields.notify_url, "https://api.example.com/api/payments/notify");
-  assert.ok(!JSON.stringify(fields).includes("test_secret"), "secret must never be sent to the browser");
-});
-
-test("PayHere notification signature is verified", () => {
-  const body = { merchant_id: "1211149", order_id: "BKG-1", payhere_amount: "1500.00", payhere_currency: "LKR", status_code: "2" };
-  const sig = md5(body.merchant_id + body.order_id + body.payhere_amount + body.payhere_currency + body.status_code + md5("test_secret"));
-  assert.equal(payhere.verifyNotification({ ...body, md5sig: sig }), true);
-  assert.equal(payhere.verifyNotification({ ...body, md5sig: sig.toLowerCase() }), true);
-  assert.equal(payhere.verifyNotification({ ...body, payhere_amount: "1.00", md5sig: sig }), false);
-  assert.equal(payhere.verifyNotification({ ...body, merchant_id: "999", md5sig: sig }), false);
-  assert.equal(payhere.verifyNotification({ ...body }), false);
-});
 
 test("iCal parser handles all-day and timed events with exclusive DTEND", () => {
   const ics = [

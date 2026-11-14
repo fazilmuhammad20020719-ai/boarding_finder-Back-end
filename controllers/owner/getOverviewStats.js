@@ -5,13 +5,13 @@ const getOverviewStats = async (req, res) => {
   try {
     const ownerId = req.user.id;
 
-    // 1. Monthly Revenue
+    // 1. Cash received this month (move-in payments the owner confirmed)
     const revSql = `
-      SELECT COALESCE(SUM(total_amount), 0) as revenue
+      SELECT COALESCE(SUM(paid_amount), 0) as revenue
       FROM bookings
-      WHERE owner_id = $1 AND status = 'approved'
-      AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM CURRENT_DATE)
-      AND EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM CURRENT_DATE)
+      WHERE owner_id = $1 AND payment_status = 'paid'
+      AND EXTRACT(MONTH FROM paid_at) = EXTRACT(MONTH FROM CURRENT_DATE)
+      AND EXTRACT(YEAR FROM paid_at) = EXTRACT(YEAR FROM CURRENT_DATE)
     `;
     const revResult = await query(revSql, [ownerId]);
     const monthlyRevenue = Number(revResult.rows[0]?.revenue || 0);
@@ -61,11 +61,11 @@ const getOverviewStats = async (req, res) => {
 
     // 5. Revenue Chart (Last 6 Months)
     const chartSql = `
-      SELECT TO_CHAR(created_at, 'Mon') as month, EXTRACT(MONTH FROM created_at) as month_num, SUM(total_amount) as revenue
+      SELECT TO_CHAR(paid_at, 'Mon') as month, EXTRACT(MONTH FROM paid_at) as month_num, SUM(paid_amount) as revenue
       FROM bookings
-      WHERE owner_id = $1 AND status = 'approved'
-        AND created_at >= NOW() - INTERVAL '5 months'
-      GROUP BY TO_CHAR(created_at, 'Mon'), EXTRACT(MONTH FROM created_at)
+      WHERE owner_id = $1 AND payment_status = 'paid'
+        AND paid_at >= date_trunc('month', NOW()) - INTERVAL '5 months'
+      GROUP BY TO_CHAR(paid_at, 'Mon'), EXTRACT(MONTH FROM paid_at)
       ORDER BY month_num
     `;
     const chartRes = await query(chartSql, [ownerId]);

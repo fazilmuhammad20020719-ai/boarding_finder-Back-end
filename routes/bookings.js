@@ -3,7 +3,7 @@ const router = express.Router();
 const auth = require("../middleware/auth");
 
 const { createBooking } = require("../controllers/bookings/createBooking");
-const { getMyBookings, getOwnerBookings, updateBookingStatus, checkBookingForListing } = require("../controllers/bookings/bookingManagement");
+const { getMyBookings, getOwnerBookings, updateBookingStatus, updatePaymentStatus, checkBookingForListing } = require("../controllers/bookings/bookingManagement");
 
 // All booking routes require authentication
 router.use(auth);
@@ -16,5 +16,7 @@ router.get("/check/:listingId", checkBookingForListing);
 // Owner routes
 router.get("/owner-bookings", getOwnerBookings);
 router.put("/:id/status", updateBookingStatus);
+// Owner (or admin) confirms the Cash on Move-in payment was received
+router.put("/:id/payment", updatePaymentStatus);
 
 module.exports = router;
