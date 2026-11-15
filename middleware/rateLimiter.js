@@ -16,12 +16,14 @@
  * @param {number} opts.max       – Max requests per window (default: 5)
  * @param {string} opts.message   – Error message sent when limit exceeded
  * @param {function} [opts.keyGenerator] – (req) => string  Custom key (default: IP)
+ * @param {boolean} [opts.skipSuccessfulRequests] – don't count requests that end with a status < 400
  */
 function createRateLimiter({
   windowMs = 15 * 60 * 1000,
   max = 5,
   message = "Too many attempts. Please try again later.",
   keyGenerator,
+  skipSuccessfulRequests = false,
 } = {}) {
   // Map<string, { count: number, resetTime: number }>
   const store = new Map();
@@ -52,6 +54,7 @@ function createRateLimiter({
       entry = { count: 1, resetTime: now + windowMs };
       store.set(key, entry);
       setRateLimitHeaders(res, max, max - 1, entry.resetTime);
+      if (skipSuccessfulRequests) refundOnSuccess(res, entry);
       return next();
     }
 
@@ -68,8 +71,16 @@ function createRateLimiter({
     }
 
     setRateLimitHeaders(res, max, max - entry.count, entry.resetTime);
+    if (skipSuccessfulRequests) refundOnSuccess(res, entry);
     return next();
   };
+}
+
+// Give the attempt back once the response turns out to be a success.
+function refundOnSuccess(res, entry) {
+  res.on("finish", () => {
+    if (res.statusCode < 400 && entry.count > 0) entry.count -= 1;
+  });
 }
 
 function setRateLimitHeaders(res, limit, remaining, resetTime) {

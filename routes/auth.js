@@ -18,12 +18,6 @@ const { forgotPassword, resetPassword } = require("../controllers/auth/passwordR
 const router = express.Router();
 
 // ─── Rate Limiters ───────────────────────────
-const loginLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,   // 15 minutes
-  max: 5,                      // 5 attempts per window
-  message: "Too many login attempts. Please try again after 15 minutes.",
-});
-
 const otpVerifyLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -67,7 +61,8 @@ router.post("/register", registerLimiter, (req, res, next) => {
 // ─────────────────────────────────────────────
 // POST /api/auth/login
 // ─────────────────────────────────────────────
-router.post("/login", loginLimiter, login);
+// No attempt limit on login (by request).
+router.post("/login", login);
 
 // ─────────────────────────────────────────────
 // POST /api/auth/refresh  — rotate refresh cookie, return new access token
