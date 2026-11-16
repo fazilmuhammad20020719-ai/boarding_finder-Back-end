@@ -2,6 +2,11 @@ const { query } = require("../../db");
 // Stored as typed: the admin dashboard renders ticket text as plain text (escaping here double-escaped it)
 const plainText = (value) => String(value).trim();
 const { validateEmail, validateName } = require("../../utils/validators");
+const { notifyAdmins } = require("../../utils/notificationUtils");
+
+// Let admins know something new is waiting in the Support inbox
+const alertAdmins = (title, message) =>
+  notifyAdmins('system_alert', title, message, '/admin-dashboard', 'reports');
 
 const createTicket = async (req, res) => {
   try {
@@ -21,6 +26,7 @@ const createTicket = async (req, res) => {
       RETURNING *;
     `;
     const result = await query(sql, [userId, safeSubject, safeDescription]);
+    alertAdmins('New support ticket', safeSubject);
 
     return res.status(201).json({
       message: "Ticket submitted successfully",
@@ -70,6 +76,7 @@ const createContactMessage = async (req, res) => {
       [plainText(subject.trim()), plainText(message.trim()), plainText(name.trim()), email.trim().toLowerCase()]
     );
 
+    alertAdmins('New Contact Us message', plainText(subject.trim()));
     return res.status(201).json({ message: "Message sent! We'll get back to you soon.", ticket_id: result.rows[0].ticket_id });
   } catch (error) {
     console.error("Error creating contact message:", error);
@@ -104,6 +111,7 @@ const createReport = async (req, res) => {
       ]
     );
 
+    alertAdmins('New report', `${label}: ${reason}`);
     return res.status(201).json({ message: "Report submitted. Our team will review it.", ticket_id: result.rows[0].ticket_id });
   } catch (error) {
     console.error("Error creating report:", error);

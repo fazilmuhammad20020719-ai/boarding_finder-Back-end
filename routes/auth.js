@@ -14,6 +14,9 @@ const uploadVerificationDocs = require("../controllers/auth/uploadVerificationDo
 const getVerificationDoc = require("../controllers/auth/getVerificationDoc");
 const { refresh, logout } = require("../controllers/auth/session");
 const { forgotPassword, resetPassword } = require("../controllers/auth/passwordReset");
+const {
+  updatePreferences, changePassword, deleteAccount, uploadAvatar, removeAvatar,
+} = require("../controllers/auth/accountSettings");
 
 const router = express.Router();
 
@@ -122,6 +125,30 @@ router.post("/upload-verification-docs", auth, uploadVerificationDocs);
 // GET /api/auth/verification-docs/:index (Protected — own documents only)
 // ─────────────────────────────────────────────
 router.get("/verification-docs/:index", auth, getVerificationDoc);
+
+// ─────────────────────────────────────────────
+// Account settings (Protected)
+// PUT    /api/auth/preferences     — notification + privacy switches
+// POST   /api/auth/change-password — needs the current password
+// POST   /api/auth/delete-account  — needs the password + "DELETE"
+// POST   /api/auth/avatar          — upload profile picture
+// DELETE /api/auth/avatar          — remove profile picture
+// ─────────────────────────────────────────────
+const passwordCheckLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many attempts. Please try again after 15 minutes.",
+});
+const avatarLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: "Too many uploads. Please try again later.",
+});
+router.put("/preferences", auth, updatePreferences);
+router.post("/change-password", auth, passwordCheckLimiter, changePassword);
+router.post("/delete-account", auth, passwordCheckLimiter, deleteAccount);
+router.post("/avatar", auth, avatarLimiter, uploadAvatar);
+router.delete("/avatar", auth, removeAvatar);
 
 module.exports = router;
 

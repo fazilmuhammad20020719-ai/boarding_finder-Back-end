@@ -152,7 +152,8 @@ const updateBookingStatus = async (req, res) => {
         'system_alert',
         "Booking Request Cancelled",
         `A student cancelled their booking request for ${title}.`,
-        '/manage-reservations'
+        '/manage-reservations',
+        'newBookings'
       );
       return res.status(200).json({ message: "Booking cancelled", booking: updated.rows[0] });
     }
@@ -177,7 +178,8 @@ const updateBookingStatus = async (req, res) => {
       status === 'approved' ? 'booking_approved' : status === 'rejected' ? 'booking_rejected' : 'system_alert',
       notificationTitle,
       notificationMsg,
-      '/my-bookings'
+      '/my-bookings',
+      'bookingUpdates'
     );
 
     if (roomNowFull) {
@@ -186,7 +188,8 @@ const updateBookingStatus = async (req, res) => {
         'system_alert',
         "Room fully booked",
         `${title} is now fully booked. New booking requests are paused until a bed frees up.`,
-        '/manage-reservations'
+        '/manage-reservations',
+        'newBookings'
       );
     }
 
@@ -256,14 +259,16 @@ const updatePaymentStatus = async (req, res) => {
         await createNotification(
           booking.owner_id, 'system_alert', "Payment marked as received",
           `An admin marked the move-in payment for ${booking.title} as received.`,
-          '/earnings'
+          '/earnings',
+          'newBookings'
         );
       }
     } else if (booking.payment_status === 'paid') {
       await createNotification(
         booking.seeker_id, 'system_alert', "Payment confirmation removed",
         `The payment confirmation for ${booking.title} was undone. Contact the owner if this is a mistake.`,
-        '/payment-history'
+        '/payment-history',
+        'bookingUpdates'
       );
     }
 

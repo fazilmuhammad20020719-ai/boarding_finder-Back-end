@@ -4,6 +4,7 @@ const {
   validateCoordinates, validateTourUrl,
 } = require("../../utils/validators");
 const { parseListingDetails } = require("../../utils/listingDetails");
+const { notifyAdmins } = require("../../utils/notificationUtils");
 
 const createListing = async (req, res) => {
   try {
@@ -70,6 +71,14 @@ const createListing = async (req, res) => {
 
     const result = await query(sql, values);
     const { ical_token, ical_import_url, ...listing } = result.rows[0];
+
+    notifyAdmins(
+      'system_alert',
+      'New listing published',
+      `An owner published "${listing.title}".`,
+      `/property/${listing.listing_id}`,
+      'newListings'
+    );
 
     return res.status(201).json({
       message: "Listing created successfully",

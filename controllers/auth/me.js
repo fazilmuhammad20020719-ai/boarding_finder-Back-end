@@ -7,7 +7,8 @@ const me = async (req, res) => {
               university, course, student_id,
               property_name, property_type, permit_number, property_address,
               is_email_verified, verification_status, verification_docs, verification_note,
-              account_status, created_at
+              account_status, created_at,
+              avatar_url, notification_prefs, privacy_prefs
        FROM users WHERE id = $1`,
       [req.user.id]
     );

@@ -4,6 +4,7 @@ const fs = require("fs");
 const { query } = require("../../db");
 const { storePrivateFiles } = require("../../utils/rcloneUpload");
 const { DOCUMENT_MIMES } = require("../../utils/fileSignature");
+const { notifyAdmins } = require("../../utils/notificationUtils");
 
 // Config from environment
 const RCLONE_REMOTE = process.env.RCLONE_VERIFICATION_REMOTE || "gdrive:BoardingFinder/verifications";
@@ -79,6 +80,15 @@ const uploadVerificationDocs = async (req, res) => {
          WHERE id = $2
          RETURNING id, name, email, role, verification_status, verification_docs`,
         [fileRefs, userId]
+      );
+
+      const uploader = result.rows[0];
+      notifyAdmins(
+        'system_alert',
+        'New verification to review',
+        `${uploader.name} (${uploader.role}) uploaded identity documents.`,
+        '/admin-dashboard',
+        'verifications'
       );
 
       return res.status(200).json({

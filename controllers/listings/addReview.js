@@ -1,6 +1,7 @@
 const { query } = require("../../db");
 const { validateComment } = require("../../utils/validators");
 const { getReviewEligibility } = require("../../utils/reviewEligibility");
+const { createNotification } = require("../../utils/notificationUtils");
 
 const addReview = async (req, res) => {
   try {
@@ -44,6 +45,16 @@ const addReview = async (req, res) => {
       RETURNING *;
     `;
     const result = await query(sql, [listingId, userId, Number(rating), comment.trim(), categoryRatings]);
+
+    // Tell the owner (they can switch this off in Settings)
+    const { rows: [listing] } = await query("SELECT owner_id, title FROM listings WHERE listing_id = $1", [listingId]);
+    if (listing) {
+      createNotification(
+        listing.owner_id, 'system_alert', 'New review',
+        `Your listing "${listing.title}" received a ${Number(rating)}-star review.`,
+        `/property/${listingId}`, 'reviews'
+      );
+    }
 
     return res.status(201).json({
       message: "Review added successfully",

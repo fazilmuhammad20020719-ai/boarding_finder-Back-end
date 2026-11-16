@@ -8,11 +8,12 @@ const broadcastAnnouncement = async (req, res) => {
       return res.status(400).json({ message: "Title and message are required." });
     }
 
-    let usersQuery = "SELECT id FROM users";
+    // Skip users who switched announcements off in Settings
+    let usersQuery = "SELECT id FROM users WHERE COALESCE(notification_prefs->>'announcements', 'true') <> 'false'";
     let queryParams = [];
 
     if (target_audience === 'student' || target_audience === 'owner') {
-      usersQuery += " WHERE role = $1";
+      usersQuery += " AND role = $1";
       queryParams.push(target_audience);
     }
 

@@ -10,7 +10,7 @@ const getListingById = async (req, res) => {
     }
 
     const sql = `
-      SELECT l.*, u.name as owner_name, u.email as owner_email, u.phone as owner_phone, occ.occupied_count
+      SELECT l.*, u.name as owner_name, u.email as owner_email, u.phone as owner_phone, u.privacy_prefs as owner_privacy, occ.occupied_count
       FROM listings l
       JOIN users u ON l.owner_id = u.id
       LEFT JOIN LATERAL (${OCCUPANCY_LATERAL}) occ ON TRUE
@@ -65,7 +65,9 @@ const getListingById = async (req, res) => {
 
     // Never expose the secret calendar feed token publicly;
     // owner contact details only go to signed-in users.
-    const { ical_token, ical_import_url, owner_email, owner_phone, ...rest } = row;
+    // Owners can hide their phone number in Settings → Privacy
+    const { ical_token, ical_import_url, owner_email, owner_phone: rawPhone, owner_privacy, ...rest } = row;
+    const owner_phone = owner_privacy?.showPhone === false ? null : rawPhone;
     const listing = withAvailability(rest); // capacity, occupied_count, spaces_available, is_fully_booked
 
     return res.status(200).json({

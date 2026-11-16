@@ -45,7 +45,9 @@ const profile = async (req, res) => {
         updated_at = NOW()
       WHERE id = $9
       RETURNING id, name, email, phone, role, university, course, student_id,
-                property_name, property_type, permit_number, property_address, created_at, updated_at`,
+                property_name, property_type, permit_number, property_address, created_at, updated_at,
+                is_email_verified, verification_status, account_status,
+                avatar_url, notification_prefs, privacy_prefs`,
       [
         name || null,
         phone || null,

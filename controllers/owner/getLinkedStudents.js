@@ -11,7 +11,7 @@ const getLinkedStudents = async (req, res) => {
     const result = await query(`
       SELECT DISTINCT
         u.id, u.name, u.email, u.phone, u.university, u.course, u.student_id,
-        u.account_status, u.verification_status,
+        u.account_status, u.verification_status, u.privacy_prefs,
         l.title AS property_name,
         l.listing_id,
         b.status AS booking_status,
@@ -28,7 +28,10 @@ const getLinkedStudents = async (req, res) => {
 
     return res.status(200).json({
       message: "Linked students fetched successfully.",
-      students: result.rows,
+      // Students can hide their university and course in Settings → Privacy
+      students: result.rows.map(({ privacy_prefs, ...s }) =>
+        privacy_prefs?.profileVisible === false ? { ...s, university: null, course: null, student_id: null } : s
+      ),
       count: result.rows.length,
     });
   } catch (err) {

@@ -5,6 +5,16 @@ const { sendEmail } = require('./sendOtp');
 // Notification types that are also delivered by email
 const EMAIL_TYPES = new Set(['booking_request', 'booking_approved', 'booking_rejected', 'payment_received', 'payment_receipt',
   'account_verified', 'account_rejected']);
+// Default preference category per type. A user who switches a category off in
+// Settings doesn't receive those notifications (in-app, email or SMS).
+// Call sites can pass an explicit category; types without one are always sent.
+const TYPE_CATEGORY = {
+  booking_request: 'newBookings',
+  booking_approved: 'bookingUpdates',
+  booking_rejected: 'bookingUpdates',
+  payment_receipt: 'bookingUpdates',
+};
+
 // Urgent types that are also sent by SMS (only when Twilio is configured)
 const SMS_TYPES = new Set(['booking_request']);
 
@@ -73,10 +83,21 @@ async function sendSms(phone, body) {
  * @param {string} title - The short title of the notification.
  * @param {string} message - The detailed message of the notification.
  * @param {string} link - The frontend URL path to redirect to when clicked (default '#').
- * @returns {Promise<Object>} The created notification object.
+ * @param {string} [category] - Preference key the user can switch off in Settings
+ *   (e.g. 'bookingUpdates', 'maintenance'). Defaults from the type.
+ * @returns {Promise<Object|null>} The created notification, or null if the user opted out.
  */
-async function createNotification(userId, type, title, message, link = '#') {
+async function createNotification(userId, type, title, message, link = '#', category = null) {
   try {
+    const prefKey = category || TYPE_CATEGORY[type];
+    if (prefKey) {
+      const { rows: [prefs] } = await query(
+        "SELECT notification_prefs->>$2 AS pref FROM users WHERE id = $1",
+        [userId, prefKey]
+      );
+      if (prefs?.pref === 'false') return null; // switched off in Settings
+    }
+
     const result = await query(
       `INSERT INTO notifications (user_id, type, title, message, link)
        VALUES ($1, $2, $3, $4, $5)
@@ -104,8 +125,19 @@ async function createNotification(userId, type, title, message, link = '#') {
   }
 }
 
+/** Notify every active admin (used for verifications, new listings and reports). */
+async function notifyAdmins(type, title, message, link, category) {
+  try {
+    const { rows } = await query("SELECT id FROM users WHERE role = 'admin' AND COALESCE(account_status, 'active') = 'active'");
+    await Promise.all(rows.map((admin) => createNotification(admin.id, type, title, message, link, category)));
+  } catch (error) {
+    console.error("❌ Failed to notify admins:", error.message);
+  }
+}
+
 module.exports = {
   createNotification,
+  notifyAdmins,
   sendSms,
   toE164,
 };

@@ -16,7 +16,8 @@ const login = async (req, res) => {
               university, course, student_id,
               property_name, property_type, permit_number, property_address,
               is_email_verified, verification_status, verification_docs, verification_note,
-              account_status, created_at
+              account_status, created_at, status_changed_by,
+              avatar_url, notification_prefs, privacy_prefs
        FROM users WHERE email = $1`,
       [email]
     );
@@ -40,6 +41,12 @@ const login = async (req, res) => {
         account_status: 'paused'
       });
     }
+    if (user.account_status === 'removed' && user.status_changed_by === user.id) {
+      return res.status(403).json({
+        message: "This account has been deleted.",
+        account_status: 'removed'
+      });
+    }
     if (user.account_status === 'removed') {
       return res.status(403).json({
         message: "Your account access has been removed. Please contact support.",
@@ -51,7 +58,7 @@ const login = async (req, res) => {
     const token = await issueSession(res, user);
 
     // Remove password_hash before sending
-    const { password_hash, ...userWithoutPassword } = user;
+    const { password_hash, status_changed_by, ...userWithoutPassword } = user;
 
     return res.status(200).json({
       message: "Login successful!",

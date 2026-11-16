@@ -43,7 +43,8 @@ router.post('/', auth, async (req, res) => {
       'system_alert',
       'New Maintenance Request',
       `A new maintenance request (${ticket_id}) was submitted for ${title}.`,
-      '/owner-dashboard' // Or maintenance tab logic
+      '/owner-dashboard', // Or maintenance tab logic
+      'maintenance'
     );
 
     res.status(201).json({ message: 'Maintenance request submitted', ticket: result.rows[0] });
@@ -122,7 +123,8 @@ router.put('/:id/status', auth, async (req, res) => {
       'system_alert',
       'Maintenance Update',
       `Your maintenance request (${updatedTicket.ticket_id}) is now: ${status}.`,
-      '/maintenance-portal'
+      '/maintenance-portal',
+      'maintenance'
     );
 
     res.json({ message: 'Status updated', ticket: updatedTicket });
