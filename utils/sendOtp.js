@@ -125,6 +125,10 @@ const sendPasswordResetEmail = async (toEmail, resetUrl, userName = "User") => {
           <div style="text-align: center; margin: 0 0 24px;">
             <a href="${resetUrl}" style="display: inline-block; background: #1952c4; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 700;">Reset Password</a>
           </div>
+          <p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0 0 8px;">
+            If the button doesn't open, copy this link into your browser:
+          </p>
+          <p style="color: #1952c4; font-size: 12px; line-height: 1.5; margin: 0 0 24px; word-break: break-all; font-family: Consolas, monospace;">${resetUrl.replace(/&/g, "&amp;")}</p>
           <p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0;">
             If you didn't request this, you can safely ignore this email — your password won't change.
           </p>

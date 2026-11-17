@@ -16,7 +16,9 @@ const createBooking = async (req, res) => {
     if (!/^\d{4}-\d{2}-\d{2}/.test(String(move_in_date)) || Number.isNaN(Date.parse(move_in_date))) {
       return res.status(400).json({ error: "Move-in date must be a valid date (YYYY-MM-DD)" });
     }
-    if (String(move_in_date).slice(0, 10) < new Date().toISOString().slice(0, 10)) {
+    // Compare with today's date in Sri Lanka (toISOString() is UTC, a day behind before 5:30 am)
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: process.env.APP_TIMEZONE || 'Asia/Colombo' }).format(new Date());
+    if (String(move_in_date).slice(0, 10) < today) {
       return res.status(400).json({ error: "Move-in date must be today or in the future" });
     }
     if (safe_duration_months < 1 || safe_duration_months > 48) {
