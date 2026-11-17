@@ -75,7 +75,12 @@ const getOwnerBookings = async (req, res) => {
 
     const result = await query(
       `SELECT b.*, l.title, l.price, l.security_deposit, u.name as seeker_name, u.email as seeker_email,
-              lease.status as lease_status
+              lease.status as lease_status,
+              -- dates as text so the browser shows them without time-zone shifts
+              to_char(b.move_in_date, 'YYYY-MM-DD') AS move_in_on,
+              to_char((b.move_in_date + (b.duration_months || ' months')::interval)::date, 'YYYY-MM-DD') AS move_out_on,
+              to_char(b.arrived_at, 'YYYY-MM-DD') AS arrived_on,
+              to_char(b.left_at, 'YYYY-MM-DD') AS left_on
        FROM bookings b
        JOIN listings l ON b.listing_id = l.listing_id
        JOIN users u ON b.seeker_id = u.id
