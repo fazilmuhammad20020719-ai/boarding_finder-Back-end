@@ -4,8 +4,16 @@
 // Confirmation = owner approval (Cash on Move-in; no online payment step).
 
 /** SQL condition: booking row `b` currently holds a bed. */
+/**
+ * SQL for the last day of a stay (exclusive): the planned move-out date
+ * (move-in + duration), or the day the owner recorded the student leaving,
+ * whichever is earlier. LEAST() ignores NULL, so no leave date = planned date.
+ */
+const stayEnd = (alias = 'b') =>
+  `LEAST(${alias}.left_at, (${alias}.move_in_date + (${alias}.duration_months || ' months')::interval)::date)`;
+
 const HOLDS_BED = `b.status = 'approved'
-  AND (b.move_in_date + (b.duration_months || ' months')::interval) > CURRENT_DATE`;
+  AND ${stayEnd('b')} > CURRENT_DATE`;
 
 /**
  * LATERAL join adding `occupied_count` for listing alias `l`.
@@ -79,4 +87,4 @@ function fullyBookedPeriods(stays, capacity) {
   return periods;
 }
 
-module.exports = { HOLDS_BED, OCCUPANCY_LATERAL, withAvailability, lockAndCount, fullyBookedPeriods };
+module.exports = { stayEnd, HOLDS_BED, OCCUPANCY_LATERAL, withAvailability, lockAndCount, fullyBookedPeriods };

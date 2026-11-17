@@ -1,4 +1,5 @@
 const { query } = require("../db");
+const { stayEnd } = require("./occupancy");
 
 // A student may rate/review a room only after actually staying there:
 // an approved booking for that listing whose stay has either finished,
@@ -27,8 +28,8 @@ async function getReviewEligibility(listingId, user) {
   // Approved (or completed) bookings for this room, with their stay dates
   const stays = await query(
     `SELECT move_in_date,
-            (move_in_date + (duration_months || ' months')::interval)::date AS move_out_date,
-            (CURRENT_DATE >= (move_in_date + (duration_months || ' months')::interval)::date) AS finished,
+            ${stayEnd('bookings')} AS move_out_date,
+            (CURRENT_DATE >= ${stayEnd('bookings')}) AS finished,
             (CURRENT_DATE - move_in_date) AS days_in
      FROM bookings
      WHERE listing_id = $1 AND seeker_id = $2 AND status IN ('approved', 'completed')

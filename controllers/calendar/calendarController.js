@@ -1,4 +1,5 @@
 const { query } = require("../../db");
+const { stayEnd } = require("../../utils/occupancy");
 
 // Get calendar blocks for a listing
 const getCalendarBlocks = async (req, res) => {
@@ -30,7 +31,7 @@ const getCalendarBlocks = async (req, res) => {
     const bookingBlocksResult = await query(
       `SELECT booking_id as id, 
               move_in_date as start_date, 
-              (move_in_date + (duration_months || ' months')::interval)::date as end_date, 
+              ${stayEnd('bookings')} as end_date, 
               'booking' as reason 
        FROM bookings 
        WHERE listing_id = $1 AND status = 'approved'

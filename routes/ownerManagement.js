@@ -1,7 +1,6 @@
 const express = require("express");
 const auth = require("../middleware/auth");
 const getLinkedStudents = require("../controllers/owner/getLinkedStudents");
-const updateStudentStatus = require("../controllers/owner/updateStudentStatus");
 const { getOverviewStats } = require("../controllers/owner/getOverviewStats");
 
 const router = express.Router();
@@ -19,10 +18,8 @@ const ownerOnly = (req, res, next) => {
 // ─────────────────────────────────────────────
 router.get("/students", auth, ownerOnly, getLinkedStudents);
 
-// ─────────────────────────────────────────────
-// PUT /api/owner/students/:id/status
-// ─────────────────────────────────────────────
-router.put("/students/:id/status", auth, ownerOnly, updateStudentStatus);
+// Owners can't change a student's account status: suspending or removing an
+// account is an admin action (Admin Dashboard → Users).
 
 // ─────────────────────────────────────────────
 // GET /api/owner/overview-stats

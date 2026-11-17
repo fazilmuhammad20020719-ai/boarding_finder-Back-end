@@ -308,4 +308,71 @@ const checkBookingForListing = async (req, res) => {
   }
 };
 
-module.exports = { getMyBookings, getOwnerBookings, updateBookingStatus, updatePaymentStatus, checkBookingForListing, approveWithinCapacity };
+// PUT /api/bookings/:id/stay  { action: 'arrived' | 'left' | 'undo_arrived' | 'undo_left', date?: 'YYYY-MM-DD' }
+// The owner (or an admin) records when the student actually moved in and out.
+// Recording "left" ends the stay on that day, so the bed is free again.
+const updateStay = async (req, res) => {
+  try {
+    const bookingId = Number(req.params.id);
+    const { action } = req.body;
+    if (!Number.isInteger(bookingId)) return res.status(400).json({ error: "Invalid booking" });
+    if (!['arrived', 'left', 'undo_arrived', 'undo_left'].includes(action)) {
+      return res.status(400).json({ error: "Invalid action" });
+    }
+
+    const { rows: [b] } = await query(
+      `SELECT b.booking_id, b.owner_id, b.seeker_id, b.status, to_char(b.arrived_at, 'YYYY-MM-DD') AS arrived_at, to_char(b.left_at, 'YYYY-MM-DD') AS left_at,
+              to_char(b.move_in_date, 'YYYY-MM-DD') AS move_in, l.title
+       FROM bookings b JOIN listings l ON l.listing_id = b.listing_id WHERE b.booking_id = $1`,
+      [bookingId]
+    );
+    if (!b) return res.status(404).json({ error: "Booking not found" });
+    if (b.owner_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: "Unauthorized" });
+    if (b.status !== 'approved') return res.status(400).json({ error: "Only approved bookings have a stay to record." });
+
+    // Today in Sri Lanka; dates can't be in the future
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: process.env.APP_TIMEZONE || 'Asia/Colombo' }).format(new Date());
+    const date = req.body.date ? String(req.body.date).slice(0, 10) : today;
+    if ((action === 'arrived' || action === 'left') && (!/^d{4}-d{2}-d{2}$/.test(date) || Number.isNaN(Date.parse(date)))) {
+      return res.status(400).json({ error: "Please give a valid date (YYYY-MM-DD)." });
+    }
+    if ((action === 'arrived' || action === 'left') && date > today) {
+      return res.status(400).json({ error: "The date can't be in the future." });
+    }
+
+    let sql, params;
+    if (action === 'arrived') {
+      if (b.left_at && date > b.left_at) return res.status(400).json({ error: "Arrival can't be after the leave date." });
+      sql = "UPDATE bookings SET arrived_at = $1, updated_at = NOW() WHERE booking_id = $2 RETURNING *";
+      params = [date, bookingId];
+    } else if (action === 'left') {
+      if (!b.arrived_at) return res.status(400).json({ error: "Mark the student as arrived first." });
+      if (date < b.arrived_at) return res.status(400).json({ error: "The leave date can't be before the arrival date." });
+      sql = "UPDATE bookings SET left_at = $1, updated_at = NOW() WHERE booking_id = $2 RETURNING *";
+      params = [date, bookingId];
+    } else if (action === 'undo_arrived') {
+      if (b.left_at) return res.status(400).json({ error: "Undo the leave date first." });
+      sql = "UPDATE bookings SET arrived_at = NULL, updated_at = NOW() WHERE booking_id = $1 RETURNING *";
+      params = [bookingId];
+    } else {
+      sql = "UPDATE bookings SET left_at = NULL, updated_at = NOW() WHERE booking_id = $1 RETURNING *";
+      params = [bookingId];
+    }
+    const { rows: [updated] } = await query(sql, params);
+
+    if (action === 'left') {
+      await createNotification(
+        b.seeker_id, 'system_alert', 'Stay ended',
+        `Your owner recorded that you moved out of ${b.title} on ${date}. You can now leave a review.`,
+        '/my-bookings', 'bookingUpdates'
+      );
+    }
+
+    return res.status(200).json({ message: "Stay updated", booking: updated });
+  } catch (err) {
+    console.error("Update stay error:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+module.exports = { getMyBookings, getOwnerBookings, updateBookingStatus, updatePaymentStatus, updateStay, checkBookingForListing, approveWithinCapacity };

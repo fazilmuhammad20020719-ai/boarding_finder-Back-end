@@ -164,6 +164,9 @@ const initDb = async () => {
       "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_confirmed_by INTEGER;",
       // Admin review moderation updates this column
       "ALTER TABLE reviews ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();",
+      // Owner records when the student actually arrived and left (leaving early frees the bed)
+      "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS arrived_at DATE;",
+      "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS left_at DATE;",
       // Account settings: profile picture, notification and privacy preferences
       "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);",
       "ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_prefs JSONB DEFAULT '{}'::jsonb;",

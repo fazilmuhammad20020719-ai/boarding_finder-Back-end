@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const dns = require("dns").promises;
 const net = require("net");
 const { query } = require("../../db");
-const { fullyBookedPeriods } = require("../../utils/occupancy");
+const { fullyBookedPeriods, stayEnd } = require("../../utils/occupancy");
 
 const ICAL_REASON = "ical";
 
@@ -64,7 +64,7 @@ const exportIcal = async (req, res) => {
     // Shared rooms are only unavailable while EVERY bed is taken by approved bookings
     const stays = await query(
       `SELECT to_char(move_in_date, 'YYYY-MM-DD') AS start,
-              to_char((move_in_date + (duration_months || ' months')::interval)::date, 'YYYY-MM-DD') AS "end"
+              to_char(${stayEnd('bookings')}, 'YYYY-MM-DD') AS "end"
        FROM bookings WHERE listing_id = $1 AND status = 'approved'`,
       [listingId]
     );
