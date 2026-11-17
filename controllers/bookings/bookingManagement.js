@@ -256,6 +256,36 @@ const removePayment = async (req, res) => {
   } catch (err) { sendError(res, err, "Remove payment error:"); }
 };
 
+
+/**
+ * Check if the current logged-in user already has a booking for a specific listing.
+ * Returns { booking: null } if none found, or { booking: {...} } with status if found.
+ */
+const checkBookingForListing = async (req, res) => {
+  try {
+    const seeker_id = req.user.id;
+    const { listingId } = req.params;
+
+    const result = await query(
+      `SELECT booking_id, status, move_in_date, duration_months, total_amount
+       FROM bookings
+       WHERE seeker_id = $1 AND listing_id = $2
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [seeker_id, listingId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(200).json({ booking: null });
+    }
+
+    res.status(200).json({ booking: result.rows[0] });
+  } catch (err) {
+    console.error("Check booking error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
 // PUT /api/bookings/:id/stay  { action: 'arrived' | 'left' | 'undo_arrived' | 'undo_left', date?: 'YYYY-MM-DD' }
 // The owner (or an admin) records when the student actually moved in and out.
 // Recording "left" ends the stay on that day, so the bed is free again.
