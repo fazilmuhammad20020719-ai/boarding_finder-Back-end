@@ -3,9 +3,10 @@
 //
 // Booking amount = the move-in amount: first month's rent + security deposit.
 //
-//   Arrival within 3 days   → FULL booking amount by the day before arrival
-//   Arrival in 4–5 days     → at least 20% advance by the day before arrival
+//   Arrival within 3 days   → FULL booking amount by the day AFTER arrival
+//   Arrival in 4–5 days     → at least 20% advance by the day AFTER arrival
 //   Arrival more than 5 days → at least 20% advance within 5 days of approval
+// (Short-notice students arrive first and get one extra day to pay.)
 //
 // The deadline day is inclusive: a booking is only rejected once that whole
 // day has passed without a qualifying payment.
@@ -44,20 +45,18 @@ const roundUp = (n) => Math.ceil(n); // whole rupees, never below the 20% minimu
 function computePaymentTerms(arrivalISO, approvalISO, bookingAmount) {
   const total = Math.max(0, Number(bookingAmount) || 0);
   const daysUntilArrival = daysBetween(approvalISO, arrivalISO);
-  // The day before arrival, but never before the approval day itself
-  const dayBeforeArrival = daysUntilArrival >= 1 ? addDays(arrivalISO, -1) : approvalISO;
+  // Short notice: one day after arrival (never before the approval day itself)
+  const afterArrival = addDays(arrivalISO, 1) > approvalISO ? addDays(arrivalISO, 1) : approvalISO;
 
   if (daysUntilArrival <= FULL_PAYMENT_WITHIN_DAYS) {
-    return { plan: 'full', deadline: dayBeforeArrival, required: total, total, daysUntilArrival };
+    return { plan: 'full', deadline: afterArrival, required: total, total, daysUntilArrival };
   }
   const advance = Math.min(total, roundUp(total * ADVANCE_RATE));
   if (daysUntilArrival <= ADVANCE_WINDOW_DAYS) {
-    return { plan: 'advance', deadline: dayBeforeArrival, required: advance, total, daysUntilArrival };
+    return { plan: 'advance', deadline: afterArrival, required: advance, total, daysUntilArrival };
   }
-  // Within 5 days of approval (still before arrival, since arrival is 6+ days away)
-  const windowEnd = addDays(approvalISO, ADVANCE_WINDOW_DAYS);
-  const deadline = windowEnd < dayBeforeArrival ? windowEnd : dayBeforeArrival;
-  return { plan: 'advance', deadline, required: advance, total, daysUntilArrival };
+  // Within 5 days of approval (arrival is 6+ days away, so this is before arrival)
+  return { plan: 'advance', deadline: addDays(approvalISO, ADVANCE_WINDOW_DAYS), required: advance, total, daysUntilArrival };
 }
 
 const lkr = (n) => `LKR ${Number(n || 0).toLocaleString('en-US')}`;
@@ -67,7 +66,7 @@ const longDate = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB
 function approvalMessage(title, arrivalISO, terms) {
   const how = 'Pay the owner by bank transfer or in cash; the owner records your payment in BoardingFinder.';
   if (terms.plan === 'full') {
-    return `Your booking for ${title} has been approved. Please complete the payment by the day before your arrival date to secure your booking. ` +
+    return `Your booking for ${title} has been approved. Please complete the payment by the day after your arrival date to secure your booking. ` +
       `Arrival date: ${longDate(arrivalISO)}. Amount due: ${lkr(terms.total)} (first month's rent + deposit), ` +
       `to be paid by ${longDate(terms.deadline)}. ${how} If it isn't received by then, the booking will be cancelled automatically.`;
   }

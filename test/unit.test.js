@@ -212,23 +212,25 @@ test("listing capacity is validated", () => {
 // ── Payment deadlines (utils/paymentRules.js) ──
 const { computePaymentTerms } = require("../utils/paymentRules");
 
-test("arrival within 3 days: full amount by the day before arrival", () => {
-  const t = computePaymentTerms("2026-12-04", "2026-12-01", 34500); // 3 days away
+test("arrival within 3 days: full amount by the day after arrival", () => {
+  const t = computePaymentTerms("2026-11-21", "2026-11-18", 22000); // 3 days away
   assert.equal(t.plan, "full");
-  assert.equal(t.required, 34500);
-  assert.equal(t.deadline, "2026-12-03");
+  assert.equal(t.required, 22000);
+  assert.equal(t.deadline, "2026-11-22");
 });
 
-test("arrival tomorrow or today: deadline is the approval day", () => {
-  assert.equal(computePaymentTerms("2026-12-02", "2026-12-01", 1000).deadline, "2026-12-01");
-  assert.equal(computePaymentTerms("2026-12-01", "2026-12-01", 1000).deadline, "2026-12-01");
+test("arrival tomorrow or today: still the day after arrival", () => {
+  assert.equal(computePaymentTerms("2026-12-02", "2026-12-01", 1000).deadline, "2026-12-03");
+  assert.equal(computePaymentTerms("2026-12-01", "2026-12-01", 1000).deadline, "2026-12-02");
+  // approved after the arrival day already passed: never earlier than the approval day
+  assert.equal(computePaymentTerms("2026-11-25", "2026-12-01", 1000).deadline, "2026-12-01");
 });
 
-test("arrival in 4–5 days: 20% advance by the day before arrival", () => {
+test("arrival in 4–5 days: 20% advance by the day after arrival", () => {
   const t = computePaymentTerms("2026-12-06", "2026-12-01", 34500); // 5 days away
   assert.equal(t.plan, "advance");
   assert.equal(t.required, 6900);
-  assert.equal(t.deadline, "2026-12-05");
+  assert.equal(t.deadline, "2026-12-07");
 });
 
 test("arrival more than 5 days away: 20% advance within 5 days of approval", () => {
@@ -236,6 +238,6 @@ test("arrival more than 5 days away: 20% advance within 5 days of approval", () 
   assert.equal(t.plan, "advance");
   assert.equal(t.required, 6901); // rounded up, never below 20%
   assert.equal(t.deadline, "2026-12-06");
-  // 6 days away: the 5-day window ends the day before arrival
+  // 6 days away: 5 days after approval, the day before arrival
   assert.equal(computePaymentTerms("2026-12-07", "2026-12-01", 1000).deadline, "2026-12-06");
 });

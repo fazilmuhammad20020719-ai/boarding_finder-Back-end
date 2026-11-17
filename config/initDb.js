@@ -182,6 +182,11 @@ const initDb = async () => {
         created_at   TIMESTAMP DEFAULT NOW()
       );`,
       "CREATE INDEX IF NOT EXISTS idx_booking_payments_booking ON booking_payments(booking_id);",
+      // Short-notice deadlines moved from the day before arrival to the day after arrival:
+      // give bookings approved under the old rule the extra two days (runs once; afterwards nothing matches)
+      `UPDATE bookings SET payment_deadline = move_in_date + 1, updated_at = NOW()
+       WHERE status = 'approved' AND payment_deadline IS NOT NULL AND payment_deadline = move_in_date - 1
+         AND COALESCE(paid_amount, 0) < COALESCE(required_amount, 0);`,
       // Earlier single cash confirmations become payment records (runs once per booking)
       `INSERT INTO booking_payments (booking_id, amount, paid_on, method, recorded_by, created_at)
        SELECT b.booking_id, b.paid_amount, COALESCE(b.paid_at::date, CURRENT_DATE), 'cash', b.payment_confirmed_by, COALESCE(b.paid_at, NOW())
