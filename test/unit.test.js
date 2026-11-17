@@ -208,3 +208,34 @@ test("listing capacity is validated", () => {
   assert.ok(parseListingDetails({ capacity: 2.5 }).error);
   assert.ok(parseListingDetails({ capacity: 101 }).error);
 });
+
+// ── Payment deadlines (utils/paymentRules.js) ──
+const { computePaymentTerms } = require("../utils/paymentRules");
+
+test("arrival within 3 days: full amount by the day before arrival", () => {
+  const t = computePaymentTerms("2026-12-04", "2026-12-01", 34500); // 3 days away
+  assert.equal(t.plan, "full");
+  assert.equal(t.required, 34500);
+  assert.equal(t.deadline, "2026-12-03");
+});
+
+test("arrival tomorrow or today: deadline is the approval day", () => {
+  assert.equal(computePaymentTerms("2026-12-02", "2026-12-01", 1000).deadline, "2026-12-01");
+  assert.equal(computePaymentTerms("2026-12-01", "2026-12-01", 1000).deadline, "2026-12-01");
+});
+
+test("arrival in 4–5 days: 20% advance by the day before arrival", () => {
+  const t = computePaymentTerms("2026-12-06", "2026-12-01", 34500); // 5 days away
+  assert.equal(t.plan, "advance");
+  assert.equal(t.required, 6900);
+  assert.equal(t.deadline, "2026-12-05");
+});
+
+test("arrival more than 5 days away: 20% advance within 5 days of approval", () => {
+  const t = computePaymentTerms("2027-01-15", "2026-12-01", 34501);
+  assert.equal(t.plan, "advance");
+  assert.equal(t.required, 6901); // rounded up, never below 20%
+  assert.equal(t.deadline, "2026-12-06");
+  // 6 days away: the 5-day window ends the day before arrival
+  assert.equal(computePaymentTerms("2026-12-07", "2026-12-01", 1000).deadline, "2026-12-06");
+});

@@ -9,7 +9,10 @@ const getAllAdminBookings = async (req, res) => {
         COUNT(*) OVER() AS total_count,
         b.booking_id, b.move_in_date, b.duration_months, b.status, b.total_amount, b.message, b.created_at,
         b.payment_status, b.paid_amount, b.paid_at,
-        (COALESCE(l.price, 0) + COALESCE(l.security_deposit, l.price, 0)) AS move_in_amount,
+        b.booking_amount, b.required_amount, b.payment_plan, b.rejection_reason,
+        to_char(b.payment_deadline, 'YYYY-MM-DD') AS payment_deadline_on,
+        COALESCE(b.booking_amount, COALESCE(l.price, 0) + COALESCE(l.security_deposit, l.price, 0)) AS move_in_amount,
+        l.price, l.security_deposit,
         l.listing_id, l.title as listing_title, l.location as listing_location,
         s.id as seeker_id, s.name as seeker_name, s.email as seeker_email, s.phone as seeker_phone,
         o.id as owner_id, o.name as owner_name, o.email as owner_email, o.phone as owner_phone

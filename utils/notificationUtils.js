@@ -89,7 +89,8 @@ async function sendSms(phone, body) {
  */
 async function createNotification(userId, type, title, message, link = '#', category = null) {
   try {
-    const prefKey = category || TYPE_CATEGORY[type];
+    // category 'always' = essential messages (payment instructions, deadline rejection) that ignore preferences
+    const prefKey = category === 'always' ? null : (category || TYPE_CATEGORY[type]);
     if (prefKey) {
       const { rows: [prefs] } = await query(
         "SELECT notification_prefs->>$2 AS pref FROM users WHERE id = $1",

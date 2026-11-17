@@ -164,6 +164,30 @@ const initDb = async () => {
       "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_confirmed_by INTEGER;",
       // Admin review moderation updates this column
       "ALTER TABLE reviews ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();",
+      // Payment before arrival: terms are fixed when the owner approves the booking
+      "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;",
+      "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_amount NUMERIC(10, 2);",
+      "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS required_amount NUMERIC(10, 2);",
+      "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_deadline DATE;",
+      "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_plan VARCHAR(10);",
+      "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS rejection_reason VARCHAR(40);",
+      `CREATE TABLE IF NOT EXISTS booking_payments (
+        payment_id   SERIAL PRIMARY KEY,
+        booking_id   INTEGER NOT NULL REFERENCES bookings(booking_id) ON DELETE CASCADE,
+        amount       NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
+        paid_on      DATE NOT NULL,
+        method       VARCHAR(20) NOT NULL DEFAULT 'cash',
+        reference    VARCHAR(100),
+        recorded_by  INTEGER REFERENCES users(id),
+        created_at   TIMESTAMP DEFAULT NOW()
+      );`,
+      "CREATE INDEX IF NOT EXISTS idx_booking_payments_booking ON booking_payments(booking_id);",
+      // Earlier single cash confirmations become payment records (runs once per booking)
+      `INSERT INTO booking_payments (booking_id, amount, paid_on, method, recorded_by, created_at)
+       SELECT b.booking_id, b.paid_amount, COALESCE(b.paid_at::date, CURRENT_DATE), 'cash', b.payment_confirmed_by, COALESCE(b.paid_at, NOW())
+       FROM bookings b
+       WHERE b.payment_status = 'paid' AND b.paid_amount > 0
+         AND NOT EXISTS (SELECT 1 FROM booking_payments p WHERE p.booking_id = b.booking_id);`,
       // Owner records when the student actually arrived and left (leaving early frees the bed)
       "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS arrived_at DATE;",
       "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS left_at DATE;",

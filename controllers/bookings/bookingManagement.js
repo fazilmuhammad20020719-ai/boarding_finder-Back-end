@@ -1,6 +1,7 @@
 const { query, pool } = require("../../db");
 const { createNotification } = require("../../utils/notificationUtils");
 const { lockAndCount } = require("../../utils/occupancy");
+const bookingPayments = require("../../utils/bookingPayments");
 
 /**
  * Approve a booking only if a bed is free and its dates avoid blocked periods.
@@ -30,10 +31,15 @@ async function approveWithinCapacity(listingId, bookingId, expectedStatus) {
       await client.query("ROLLBACK");
       return { error: "These dates overlap dates you have blocked on the calendar.", code: "blocked_dates" };
     }
+    // Payment terms are fixed now: amount, minimum to pay and deadline
+    const terms = await bookingPayments.termsForApproval(client, bookingId);
     // Status guard: don't approve if someone changed it meanwhile
     const upd = await client.query(
-      "UPDATE bookings SET status = 'approved', updated_at = NOW() WHERE booking_id = $1 AND status = $2 RETURNING *",
-      [bookingId, expectedStatus]
+      `UPDATE bookings
+       SET status = 'approved', updated_at = NOW(), approved_at = NOW(), rejection_reason = NULL,
+           booking_amount = $3, required_amount = $4, payment_deadline = $5, payment_plan = $6
+       WHERE booking_id = $1 AND status = $2 RETURNING *`,
+      [bookingId, expectedStatus, terms.total, terms.required, terms.deadline, terms.plan]
     );
     if (upd.rows.length === 0) {
       await client.query("ROLLBACK");
@@ -54,7 +60,9 @@ const getMyBookings = async (req, res) => {
     const seeker_id = req.user.id;
 
     const result = await query(
-      `SELECT b.*, l.title, l.location, l.price, l.security_deposit, l.image_urls
+      `SELECT b.*, l.title, l.location, l.price, l.security_deposit, l.image_urls,
+              to_char(b.move_in_date, 'YYYY-MM-DD') AS move_in_on,
+              to_char(b.payment_deadline, 'YYYY-MM-DD') AS payment_deadline_on
        FROM bookings b
        JOIN listings l ON b.listing_id = l.listing_id
        WHERE b.seeker_id = $1
@@ -80,7 +88,8 @@ const getOwnerBookings = async (req, res) => {
               to_char(b.move_in_date, 'YYYY-MM-DD') AS move_in_on,
               to_char((b.move_in_date + (b.duration_months || ' months')::interval)::date, 'YYYY-MM-DD') AS move_out_on,
               to_char(b.arrived_at, 'YYYY-MM-DD') AS arrived_on,
-              to_char(b.left_at, 'YYYY-MM-DD') AS left_on
+              to_char(b.left_at, 'YYYY-MM-DD') AS left_on,
+              to_char(b.payment_deadline, 'YYYY-MM-DD') AS payment_deadline_on
        FROM bookings b
        JOIN listings l ON b.listing_id = l.listing_id
        JOIN users u ON b.seeker_id = u.id
@@ -178,9 +187,11 @@ const updateBookingStatus = async (req, res) => {
       notificationMsg = `Your booking for ${title} has been cancelled by the owner.`;
     }
 
-    await createNotification(
+    if (status === 'approved') {
+      await bookingPayments.notifyApproval(updated.rows[0]);
+    } else await createNotification(
       seeker_id,
-      status === 'approved' ? 'booking_approved' : status === 'rejected' ? 'booking_rejected' : 'system_alert',
+      status === 'rejected' ? 'booking_rejected' : 'system_alert',
       notificationTitle,
       notificationMsg,
       '/my-bookings',
@@ -212,105 +223,37 @@ const updateBookingStatus = async (req, res) => {
  * monthly rent tracking — one confirmation per booking.
  * PUT /api/bookings/:id/payment  { paid: boolean, amount?: number }
  */
-const updatePaymentStatus = async (req, res) => {
-  try {
-    const bookingId = Number(req.params.id);
-    const paid = req.body?.paid === true;
-    if (!Number.isInteger(bookingId) || typeof req.body?.paid !== 'boolean') {
-      return res.status(400).json({ error: "Send { paid: true } or { paid: false }" });
-    }
-
-    const found = await query(
-      `SELECT b.booking_id, b.owner_id, b.seeker_id, b.status, b.payment_status, l.title, l.price, l.security_deposit
-       FROM bookings b JOIN listings l ON b.listing_id = l.listing_id WHERE b.booking_id = $1`,
-      [bookingId]
-    );
-    const booking = found.rows[0];
-    if (!booking) return res.status(404).json({ error: "Booking not found" });
-
-    const isAdmin = req.user.role === 'admin';
-    if (booking.owner_id !== req.user.id && !isAdmin) {
-      return res.status(403).json({ error: "Only the owner of this boarding place can confirm payment" });
-    }
-    if (booking.status !== 'approved') {
-      return res.status(400).json({ error: "Payment can only be confirmed for an approved booking" });
-    }
-
-    let amount = null;
-    if (paid) {
-      const expected = Number(booking.price || 0) + Number(booking.security_deposit ?? booking.price ?? 0);
-      amount = req.body.amount === undefined || req.body.amount === null || req.body.amount === ''
-        ? expected
-        : Number(req.body.amount);
-      if (!Number.isFinite(amount) || amount < 0 || amount > 10000000) {
-        return res.status(400).json({ error: "Enter a valid amount" });
-      }
-    }
-
-    const updated = await query(
-      `UPDATE bookings
-       SET payment_status = $1, paid_amount = $2, paid_at = $3, payment_confirmed_by = $4, updated_at = NOW()
-       WHERE booking_id = $5 RETURNING *`,
-      [paid ? 'paid' : 'unpaid', amount, paid ? new Date() : null, paid ? req.user.id : null, bookingId]
-    );
-
-    if (paid) {
-      await createNotification(
-        booking.seeker_id, 'payment_receipt', "Move-in payment confirmed",
-        `The owner confirmed your cash payment of LKR ${amount.toLocaleString()} for ${booking.title}.`,
-        '/payment-history'
-      );
-      if (isAdmin && booking.owner_id !== req.user.id) {
-        await createNotification(
-          booking.owner_id, 'system_alert', "Payment marked as received",
-          `An admin marked the move-in payment for ${booking.title} as received.`,
-          '/earnings',
-          'newBookings'
-        );
-      }
-    } else if (booking.payment_status === 'paid') {
-      await createNotification(
-        booking.seeker_id, 'system_alert', "Payment confirmation removed",
-        `The payment confirmation for ${booking.title} was undone. Contact the owner if this is a mistake.`,
-        '/payment-history',
-        'bookingUpdates'
-      );
-    }
-
-    res.status(200).json({ message: paid ? "Payment confirmed" : "Payment confirmation removed", booking: updated.rows[0] });
-  } catch (err) {
-    console.error("Update payment status error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
+// Payments are recorded by the owner (or an admin): the student pays by bank
+// transfer or cash before arrival. See utils/paymentRules.js for the deadlines.
+const sendError = (res, err, label) => {
+  if (err.status) return res.status(err.status).json({ error: err.message });
+  console.error(label, err);
+  return res.status(500).json({ error: "Server error" });
 };
 
-/**
- * Check if the current logged-in user already has a booking for a specific listing.
- * Returns { booking: null } if none found, or { booking: {...} } with status if found.
- */
-const checkBookingForListing = async (req, res) => {
+// GET /api/bookings/:id/payments — owner, admin or the booking's student
+const getPayments = async (req, res) => {
   try {
-    const seeker_id = req.user.id;
-    const { listingId } = req.params;
+    const { rows: [b] } = await query("SELECT owner_id, seeker_id FROM bookings WHERE booking_id = $1", [req.params.id]);
+    if (!b) return res.status(404).json({ error: "Booking not found" });
+    if (![b.owner_id, b.seeker_id].includes(req.user.id) && req.user.role !== 'admin') return res.status(403).json({ error: "Unauthorized" });
+    res.json({ payments: await bookingPayments.listPayments(req.params.id) });
+  } catch (err) { sendError(res, err, "Get payments error:"); }
+};
 
-    const result = await query(
-      `SELECT booking_id, status, move_in_date, duration_months, total_amount
-       FROM bookings
-       WHERE seeker_id = $1 AND listing_id = $2
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [seeker_id, listingId]
-    );
+// POST /api/bookings/:id/payments  { amount, paid_on, method: cash|bank_transfer|other, reference }
+const addPayment = async (req, res) => {
+  try {
+    const result = await bookingPayments.recordPayment(Number(req.params.id), req.user, req.body || {});
+    res.status(201).json({ message: result.confirmedNow ? "Payment recorded – booking confirmed" : "Payment recorded", ...result });
+  } catch (err) { sendError(res, err, "Add payment error:"); }
+};
 
-    if (result.rows.length === 0) {
-      return res.status(200).json({ booking: null });
-    }
-
-    res.status(200).json({ booking: result.rows[0] });
-  } catch (err) {
-    console.error("Check booking error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
+// DELETE /api/bookings/:id/payments/:paymentId — undo a payment recorded by mistake
+const removePayment = async (req, res) => {
+  try {
+    res.json(await bookingPayments.deletePayment(Number(req.params.id), Number(req.params.paymentId), req.user));
+  } catch (err) { sendError(res, err, "Remove payment error:"); }
 };
 
 // PUT /api/bookings/:id/stay  { action: 'arrived' | 'left' | 'undo_arrived' | 'undo_left', date?: 'YYYY-MM-DD' }
@@ -380,4 +323,4 @@ const updateStay = async (req, res) => {
   }
 };
 
-module.exports = { getMyBookings, getOwnerBookings, updateBookingStatus, updatePaymentStatus, updateStay, checkBookingForListing, approveWithinCapacity };
+module.exports = { getMyBookings, getOwnerBookings, updateBookingStatus, getPayments, addPayment, removePayment, updateStay, checkBookingForListing, approveWithinCapacity };

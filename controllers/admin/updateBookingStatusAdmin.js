@@ -1,5 +1,6 @@
 const { query } = require("../../db");
 const { approveWithinCapacity } = require("../bookings/bookingManagement");
+const { notifyApproval } = require("../../utils/bookingPayments");
 
 const updateBookingStatusAdmin = async (req, res) => {
   const { id } = req.params;
@@ -19,6 +20,7 @@ const updateBookingStatusAdmin = async (req, res) => {
     if (status === 'approved' && current.rows[0].status !== 'approved') {
       const result = await approveWithinCapacity(current.rows[0].listing_id, id, current.rows[0].status);
       if (result.error) return res.status(409).json({ message: result.error, code: result.code });
+      await notifyApproval(result.booking); // payment instructions + deadline
       return res.json({ message: "Booking status updated successfully", booking: result.booking });
     }
 

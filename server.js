@@ -95,6 +95,8 @@ const startServer = async () => {
     // Initialize database tables
     await initDb();
 
+    // Cancel approved bookings whose payment deadline passed unpaid
+    require("./utils/bookingPayments").startPaymentDeadlineJob();
     const server = app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`🌐 CORS origin: ${process.env.CORS_ORIGIN || "*"}`);
